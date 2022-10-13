@@ -1,0 +1,1504 @@
+
+###
+### SERVER
+
+shinyServer(function(input, output, session){
+
+
+
+  ## this chunk is somewhat part of the UI: it creates the "confirm upload" button, dependent on data being supplied
+  # the dependency is created so that the app does not crash due to analyses being run without any input
+  output$confirm_upload2 <- shiny::renderUI({
+
+    if(  is.null(input$IPD) == TRUE & is.null(input$ReplicationSum) == TRUE & is.null(input$MergedReplicationSum) == TRUE & is.null(input$MetaPipeX) == TRUE ){
+    } else {
+      shiny::actionButton("confirm_upload","Provide MetaPipeX data format to the app.")
+    }
+  })
+
+
+  ### IPD Input
+
+  # object for columns selection (IPD upload)
+  IPD_list <- shiny::reactive({
+
+    if (length(input$IPD) > 0) {
+
+      # extract upload info from UI input
+      upload_info <- input$IPD
+
+      # import all selected .csv data
+      lapply(upload_info$datapath,readr::read_csv)
+
+    } else {
+
+    }
+
+  })
+
+  IPD_raw_data_input_columns <- shiny::reactive({
+
+    # store all columns names in "IPD_raw_data_input_columns" for columns selection in UI
+    unlist(unique(lapply(IPD_list(), names)))
+
+  })
+
+
+  shiny::observe({
+    shiny::updateSelectInput(session, "multilab_col",
+                             choices = IPD_raw_data_input_columns(),
+                             selected = if ( any(IPD_raw_data_input_columns() == "MultiLab") ) {"MultiLab"}else{})
+  })
+
+  shiny::observe({
+    shiny::updateSelectInput(session, "replicationproject_col",
+                             choices = IPD_raw_data_input_columns(),
+                             selected = if ( any(IPD_raw_data_input_columns() == "ReplicationProject") ) {"ReplicationProject"}else{})
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "replication_col",
+                             choices = IPD_raw_data_input_columns(),
+                             selected = if ( any(IPD_raw_data_input_columns() == "Replication") ) {"Replication"}else{})
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "DV_col",
+                             choices = IPD_raw_data_input_columns(),
+                             selected = if ( any(IPD_raw_data_input_columns() == "DV") ) {"DV"}else{})
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "group_col",
+                             choices = IPD_raw_data_input_columns(),
+                             selected = if ( any(IPD_raw_data_input_columns() == "Group") ) {"Group"}else{})
+  })
+
+  # run the pipeline, as soon as the column selection is confirmed
+
+  IPD_data_input <- shiny::eventReactive( input$confirm_upload, {
+
+    IPD_list <- IPD_list()
+
+    shiny::withProgress(message = 'Calculation in progress. This may take a moment.',
+                        detail = 'Go to the Data Selection tab.',
+                        style = "old",
+                        {
+
+                          if (input$create_custom_multilab_col == TRUE) {
+                            IPD_list <- lapply(IPD_list, cbind, MultiLab = "MultiLab")
+                          }else{}
+
+                          if (input$create_custom_replicationproject_col == TRUE) {
+                            IPD_list <- lapply(IPD_list, cbind, ReplicationProject = "ReplicationProject")
+                          }else{}
+
+
+                          # If a single data frame is provided to the function it is transformed to a list object. Each list element represents a replication projects/target-effect.
+                          if (length(IPD_list) > 1) {}else{
+
+                            if (input$create_custom_replicationproject_col == TRUE) {
+                              IPD_list <- IPD_list[[1]] %>% dplyr::group_split( ReplicationProject )
+                            } else {
+                              # IPD_list <- IPD_list[[1]] %>% dplyr::group_split( toString(input$replicationproject_col) )
+
+                              unique_replicationprojects <- unlist(unique(IPD_list[[1]][,input$replicationproject_col]))
+
+                              IPD_new <- list()
+
+                              IPD_new <- lapply(1:length(unique_replicationprojects), function(x){IPD_new[[unique_replicationprojects[x]]] <- base::subset(IPD_list[[1]], IPD_list[[1]][input$replicationproject_col] == unique_replicationprojects[x])})
+
+                              IPD_list <- IPD_new
+
+                            }
+                          }
+
+
+                          # reduce to the relevant columns
+                          reduce_cols <- function(x){
+
+                            IPD_list[[x]] <- base::subset(IPD_list[[x]], select =  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col},
+                                                                                     if(input$create_custom_replicationproject_col == TRUE){"ReplicationProject"}else{input$replicationproject_col},
+                                                                                     input$replication_col,
+                                                                                     input$DV_col,
+                                                                                     input$group_col))
+
+                          }
+                          IPD_list <- lapply(1:length(IPD_list), reduce_cols)
+
+                          # remove NA
+                          IPD_list <- lapply(1:length(IPD_list), function(x){IPD_list[[x]] <- stats::na.omit(IPD_list[[x]])})
+
+
+                          # run the pipeline function
+                          IPD_analzed <- MetaPipeX::full_pipeline(data = IPD_list,
+                                                                  MultiLab = if(input$create_custom_multilab_col == TRUE){}else{input$multilab_col},
+                                                                  ReplicationProject = if(input$create_custom_replicationproject_col == TRUE){}else{input$replicationproject_col},
+                                                                  Replication = input$replication_col,
+                                                                  DV = input$DV_col,
+                                                                  Group = input$group_col,
+                                                                  output_path = input$output_folder_set,
+                                                                  folder_name = if (length(input$output_folder_set) > 1) {"MetaPipeX_Output"}else{}
+                          )
+
+                        })
+
+    IPD_analzed$`5_Meta_Pipe_X`$MetaPipeX_Data
+
+  })
+
+
+
+  ### ReplicationSum Input
+
+  # run the pipeline, as soon as the input is confirmed
+
+  ReplicationSum_data_input <- shiny::eventReactive( input$confirm_upload, {
+
+    # extract upload info from UI input
+    upload_info <- input$ReplicationSum
+
+    # import all selected .csv data
+    ReplicationSum_list <- lapply(upload_info$datapath,readr::read_csv)
+
+    shiny::withProgress(message = 'Calculation in progress. This may take a moment.',
+                        detail = 'Go to the Data Selection tab.',
+                        style = "old",
+                        {
+                          # merge the Replication summaries
+                          ReplicationSum_merged <- MetaPipeX::merge_replication_summaries(data = ReplicationSum_list,
+                                                                                          output_folder = input$output_folder_set)
+
+                          # run meta analyses
+                          ReplicationSum_analyzed <- MetaPipeX::meta_analyses(data = ReplicationSum_merged$merged_replication_summaries,
+                                                                              output_folder = input$output_folder_set)
+
+                          ## combine Replication and meta analysis data
+
+                          # reorder data frames
+                          merged_replication_summaries <- dplyr::arrange(ReplicationSum_merged$merged_replication_summaries, ReplicationProject)
+                          meta_analyses <- dplyr::arrange(ReplicationSum_analyzed$meta_analyses, ReplicationProject)
+
+                          # number of Replications per ReplicationProject (= "How many Replications are in each ReplicationProject?")
+                          k_per_ReplicationProject <- merged_replication_summaries %>%
+                            dplyr::count(.,ReplicationProject) %>%
+                            dplyr::pull(.,n)
+
+                          # duplication vector (indicates how often ReplicationProject level column needs to be repeated to match the Replication level structure)
+                          duplications <- rep(1:base::nrow(meta_analyses), k_per_ReplicationProject)
+
+                          # expand df
+                          expanded_MA <- meta_analyses[duplications,]
+
+                          # reorder both data frames (so they match) and combine them to create the MetaPipeX App data format
+                          MetaPipeX_Data <- cbind(merged_replication_summaries, expanded_MA)
+
+                          # add "Replication__Result__" to all Replication related columns and "MA__" to all meta-analysis columns
+                          # Replication
+                          # columns from "T_N" to "SE_SMD"
+                          first_replication_col <- which(names(MetaPipeX_Data) == "T_N")
+                          last_replication_col <- which(names(MetaPipeX_Data) == "SE_SMD")
+                          names(MetaPipeX_Data)[first_replication_col:last_replication_col] <- paste("Replication__Result__", names(MetaPipeX_Data[,first_replication_col:last_replication_col]), sep = "")
+
+                          # MA
+                          first_replication_MA <- last_replication_col + 1
+                          last_replication_MA <- ncol(MetaPipeX_Data)
+                          names(MetaPipeX_Data)[first_replication_MA:last_replication_MA] <- paste("MA__", names(MetaPipeX_Data[,first_replication_MA:last_replication_MA]), sep = "")
+
+                          # delete duplicate/redundant columns
+                          MetaPipeX_Data$MA__MultiLab <- NULL
+                          MetaPipeX_Data$MA__ReplicationProject <- NULL
+                          base::rownames(MetaPipeX_Data) <- NULL
+
+
+                          ### Create codebook
+
+                          # create empty df
+                          abbr_library <- data.frame(Abbreviation = logical(0),
+                                                     Full_Name = logical(0))
+
+                          # pair abbreviations with verbal descriptions
+                          abbr_library <- as.data.frame(base::rbind(c("_T_", "__treatment group_"),
+                                                                    c("_C_", "__control group_"),
+                                                                    c("_N", "_number of participants"),
+                                                                    c("_K", "_number of replications"),
+                                                                    c("_MD", "_mean difference"),
+                                                                    c("_Est_", "_model estimate for_"),
+                                                                    c("_M", "_mean"),
+                                                                    c("_SD", "_standard deviation"),
+                                                                    c("__SE_", "__standard error of the_"),
+                                                                    c("_SMD", "_standardized mean difference"),
+                                                                    c("MA__", "meta analysis level:__"),
+                                                                    c("__pooled_", "__pooled_"),
+                                                                    c("Replication__", "replication level:__"), # redundant but maybe necessary for code (if pooled works but (for example) "Estimate" does not, I'll know)
+                                                                    c("__Tau2_", "__Tau2 for_"),
+                                                                    c("__SE_Tau2_", "__standard error of_Tau2 for_"),
+                                                                    c("__Tau_", "__Tau for_"),
+                                                                    c("__CoeffVar_", "__Coefficient of Variation (tau/mu) for_"),
+                                                                    c("__I2_", "__I2 for_"),
+                                                                    c("__H2_", "__H2 for_"),
+                                                                    c("__QE_", "__QE for_"),
+                                                                    c("__QEp_", "__QEp for_")
+                          ))
+
+                          # rename columns of df
+                          names(abbr_library) <- c("Abbreviation", "Full_Name")
+
+                          # extract names from merged df
+                          description_vector <- names(MetaPipeX_Data)
+
+                          # sorry for this, did not want to loop
+                          # check if there's enough pipes in that orchestra
+                          #base::nrow(abbr_library) (the result of this should be equivalent to the max indexing in the following chunk)
+
+
+                          description_vector %<>% # pipe from magrittr
+                            gsub(abbr_library$Abbreviation[1], abbr_library$Full_Name[1], .) %>%
+                            gsub(abbr_library$Abbreviation[2], abbr_library$Full_Name[2], .) %>%
+                            gsub(abbr_library$Abbreviation[3], abbr_library$Full_Name[3], .) %>%
+                            gsub(abbr_library$Abbreviation[4], abbr_library$Full_Name[4], .) %>%
+                            gsub(abbr_library$Abbreviation[5], abbr_library$Full_Name[5], .) %>%
+                            gsub(abbr_library$Abbreviation[6], abbr_library$Full_Name[6], .) %>%
+                            gsub(abbr_library$Abbreviation[7], abbr_library$Full_Name[7], .) %>%
+                            gsub(abbr_library$Abbreviation[8], abbr_library$Full_Name[8], .) %>%
+                            gsub(abbr_library$Abbreviation[9], abbr_library$Full_Name[9], .) %>%
+                            gsub(abbr_library$Abbreviation[10], abbr_library$Full_Name[10], .) %>%
+                            gsub(abbr_library$Abbreviation[11], abbr_library$Full_Name[11], .) %>%
+                            gsub(abbr_library$Abbreviation[12], abbr_library$Full_Name[12], .) %>%
+                            gsub(abbr_library$Abbreviation[13], abbr_library$Full_Name[13], .) %>%
+                            gsub(abbr_library$Abbreviation[14], abbr_library$Full_Name[14], .) %>%
+                            gsub(abbr_library$Abbreviation[15], abbr_library$Full_Name[15], .) %>%
+                            gsub(abbr_library$Abbreviation[16], abbr_library$Full_Name[16], .) %>%
+                            gsub(abbr_library$Abbreviation[17], abbr_library$Full_Name[17], .) %>%
+                            gsub(abbr_library$Abbreviation[18], abbr_library$Full_Name[18], .) %>%
+                            gsub(abbr_library$Abbreviation[19], abbr_library$Full_Name[19], .) %>%
+                            gsub(abbr_library$Abbreviation[20], abbr_library$Full_Name[20], .)
+
+                          description_vector <- gsub("__Result__", "_", description_vector)
+
+                          description_vector <- gsub("___", "_", description_vector)
+                          description_vector <- gsub("__", "_", description_vector)
+                          description_vector <- gsub("_", " ", description_vector)
+
+                          codebook_for_meta_pipe_x <- data.frame(Variable_Name = names(MetaPipeX_Data), Variable_Description = description_vector)
+
+                        })
+
+    MetaPipeX_Data
+
+  })
+
+
+  ### MergedReplicationSum Input
+
+  # run the pipeline, as soon as the input is confirmed
+
+  MergedReplicationSum_data_input <- shiny::eventReactive( input$confirm_upload, {
+
+    # extract upload info from UI input
+    upload_info <- input$MergedReplicationSum
+
+    # import selected .csv data
+    MergedReplicationSum <- readr::read_csv(file = upload_info$datapath)
+
+    shiny::withProgress(message = 'Calculation in progress. This may take a moment.',
+                        detail = 'Go to the Data Selection tab.',
+                        style = "old",
+                        {
+                          # run meta analyses
+                          ReplicationSum_analyzed <- MetaPipeX::meta_analyses(data = MergedReplicationSum,
+                                                                              output_folder = input$output_folder_set)
+
+                          ## combine replication and meta analysis data
+
+                          # reorder data frames
+                          merged_replication_summaries <- dplyr::arrange(MergedReplicationSum, ReplicationProject)
+                          meta_analyses <- dplyr::arrange(ReplicationSum_analyzed$meta_analyses, ReplicationProject)
+
+                          # number of replications per ReplicationProject (= "How many replications are in each ReplicationProject?")
+                          k_per_ReplicationProject <- merged_replication_summaries %>%
+                            dplyr::count(.,ReplicationProject) %>%
+                            dplyr::pull(.,n)
+
+                          # duplication vector (indicates how often ReplicationProject level column needs to be repeated to match the replication level structure)
+                          duplications <- rep(1:base::nrow(meta_analyses), k_per_ReplicationProject)
+
+                          # expand df
+                          expanded_MA <- meta_analyses[duplications,]
+
+                          # reorder both data frames (so they match) and combine them to create the MetaPipeX App data format
+                          MetaPipeX_Data <- cbind(merged_replication_summaries, expanded_MA)
+
+                          # add "Replication__Result__" to all replication related columns and "MA__" to all meta-analysis columns
+                          # Replication
+                          # columns from "T_N" to "SE_SMD"
+                          first_replication_col <- which(names(MetaPipeX_Data) == "T_N")
+                          last_replication_col <- which(names(MetaPipeX_Data) == "SE_SMD")
+                          names(MetaPipeX_Data)[first_replication_col:last_replication_col] <- paste("Replication__Result__", names(MetaPipeX_Data[,first_replication_col:last_replication_col]), sep = "")
+
+                          # MA
+                          first_replication_MA <- last_replication_col + 1
+                          last_replication_MA <- ncol(MetaPipeX_Data)
+                          names(MetaPipeX_Data)[first_replication_MA:last_replication_MA] <- paste("MA__", names(MetaPipeX_Data[,first_replication_MA:last_replication_MA]), sep = "")
+
+                          # delete duplicate/redundant columns
+                          MetaPipeX_Data$MA__MultiLab <- NULL
+                          MetaPipeX_Data$MA__ReplicationProject <- NULL
+                          base::rownames(MetaPipeX_Data) <- NULL
+
+
+                          ### Create codebook
+
+                          # create empty df
+                          abbr_library <- data.frame(Abbreviation = logical(0),
+                                                     Full_Name = logical(0))
+
+                          # pair abbreviations with verbal descriptions
+                          abbr_library <- as.data.frame(base::rbind(c("_T_", "__treatment group_"),
+                                                                    c("_C_", "__control group_"),
+                                                                    c("_N", "_number of participants"),
+                                                                    c("_K", "_number of replications"),
+                                                                    c("_MD", "_mean difference"),
+                                                                    c("_Est_", "_model estimate for_"),
+                                                                    c("_M", "_mean"),
+                                                                    c("_SD", "_standard deviation"),
+                                                                    c("__SE_", "__standard error of the_"),
+                                                                    c("_SMD", "_standardized mean difference"),
+                                                                    c("MA__", "meta analysis level:__"),
+                                                                    c("__pooled_", "__pooled_"),
+                                                                    c("Replication__", "replication level:__"), # redundant but maybe necessary for code (if pooled works but (for example) "Estimate" does not, I'll know)
+                                                                    c("__Tau2_", "__Tau2 for_"),
+                                                                    c("__SE_Tau2_", "__standard error of_Tau2 for_"),
+                                                                    c("__Tau_", "__Tau for_"),
+                                                                    c("__CoeffVar_", "__Coefficient of Variation (tau/mu) for_"),
+                                                                    c("__I2_", "__I2 for_"),
+                                                                    c("__H2_", "__H2 for_"),
+                                                                    c("__QE_", "__QE for_"),
+                                                                    c("__QEp_", "__QEp for_")
+                          ))
+
+                          # rename columns of df
+                          names(abbr_library) <- c("Abbreviation", "Full_Name")
+
+                          # extract names from merged df
+                          description_vector <- names(MetaPipeX_Data)
+
+                          # sorry for this, did not want to loop
+                          # check if there's enough pipes in that orchestra
+                          #base::nrow(abbr_library) (the result of this should be equivalent to the max indexing in the following chunk)
+
+
+                          description_vector %<>% # pipe from magrittr
+                            gsub(abbr_library$Abbreviation[1], abbr_library$Full_Name[1], .) %>%
+                            gsub(abbr_library$Abbreviation[2], abbr_library$Full_Name[2], .) %>%
+                            gsub(abbr_library$Abbreviation[3], abbr_library$Full_Name[3], .) %>%
+                            gsub(abbr_library$Abbreviation[4], abbr_library$Full_Name[4], .) %>%
+                            gsub(abbr_library$Abbreviation[5], abbr_library$Full_Name[5], .) %>%
+                            gsub(abbr_library$Abbreviation[6], abbr_library$Full_Name[6], .) %>%
+                            gsub(abbr_library$Abbreviation[7], abbr_library$Full_Name[7], .) %>%
+                            gsub(abbr_library$Abbreviation[8], abbr_library$Full_Name[8], .) %>%
+                            gsub(abbr_library$Abbreviation[9], abbr_library$Full_Name[9], .) %>%
+                            gsub(abbr_library$Abbreviation[10], abbr_library$Full_Name[10], .) %>%
+                            gsub(abbr_library$Abbreviation[11], abbr_library$Full_Name[11], .) %>%
+                            gsub(abbr_library$Abbreviation[12], abbr_library$Full_Name[12], .) %>%
+                            gsub(abbr_library$Abbreviation[13], abbr_library$Full_Name[13], .) %>%
+                            gsub(abbr_library$Abbreviation[14], abbr_library$Full_Name[14], .) %>%
+                            gsub(abbr_library$Abbreviation[15], abbr_library$Full_Name[15], .) %>%
+                            gsub(abbr_library$Abbreviation[16], abbr_library$Full_Name[16], .) %>%
+                            gsub(abbr_library$Abbreviation[17], abbr_library$Full_Name[17], .) %>%
+                            gsub(abbr_library$Abbreviation[18], abbr_library$Full_Name[18], .) %>%
+                            gsub(abbr_library$Abbreviation[19], abbr_library$Full_Name[19], .) %>%
+                            gsub(abbr_library$Abbreviation[20], abbr_library$Full_Name[20], .)
+
+                          description_vector <- gsub("__Result__", "_", description_vector)
+
+                          description_vector <- gsub("___", "_", description_vector)
+                          description_vector <- gsub("__", "_", description_vector)
+                          description_vector <- gsub("_", " ", description_vector)
+
+                          codebook_for_meta_pipe_x <- data.frame(Variable_Name = names(MetaPipeX_Data), Variable_Description = description_vector)
+
+                        })
+
+    MetaPipeX_Data
+
+  })
+
+
+  ### MetaPipeX Input
+
+  MetaPipeX_data_input <- shiny::reactive({
+    upload_info <- input$MetaPipeX
+    readr::read_csv(file = upload_info$datapath)
+  })
+
+  MA_data <- shiny::eventReactive( input$confirm_upload, {
+    if (input$select_upload == "MetaPipeX") {
+      MetaPipeX_data_input()
+    } else if (input$select_upload == "MergedReplicationSum") {
+      MergedReplicationSum_data_input()
+    } else if (input$select_upload == "ReplicationSum") {
+      ReplicationSum_data_input()
+    } else if (input$select_upload == "IPD") {
+      IPD_data_input()
+    } else {
+      c()
+    }
+  })
+
+
+  ### Data Selection
+
+  ## selectInput dependencies
+
+  multilab_choices <- shiny::reactive({
+    MA_data <- MA_data()
+    c("all", unique(MA_data$MultiLab))
+  })
+  replicationproject_choices <- shiny::reactive({
+    MA_data <- MA_data()
+    unique(MA_data$ReplicationProject)
+  })
+  replication_choices <- shiny::reactive({
+    MA_data <- MA_data()
+    c("all", unique(MA_data$Replication))
+  })
+
+  shiny::observe({
+    shiny::updateSelectInput(session, "MultiLab",
+                             choices = multilab_choices())
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "ReplicationProject",
+                             choices = if (input$MultiLab == "all") { # return all ReplicationProjects
+                               c("all", replicationproject_choices())
+                             } else { # only return ReplicationProjects from the selected multilab
+                               MA_data <- MA_data()
+                               c("all", unique(MA_data[MA_data$MultiLab == input$MultiLab,]$ReplicationProject))
+                             }
+    )
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "Replication",
+                             choices = if (input$MultiLab == "all") {
+                               MA_data <- MA_data()
+                               c("all",unique(MA_data[MA_data$MultiLab == input$MultiLab,]$Replication))
+                             } else {
+                               MA_data <- MA_data()
+                               c("all", unique(MA_data[MA_data$MultiLab == input$MultiLab,]$Replication))
+                             }
+    )
+  })
+
+
+  ## create the data table as reactive object according to the selection in the data table tab
+  data <- shiny::reactive({
+
+    # this line of code exists purely, to create a dependency between the reactive object data() and the exclusion process
+    # it does not and should not produce any output
+    if (is.na(input$exclusion) == TRUE) {}
+
+    # create df from reactive object
+    MA_data <- MA_data()
+
+    # decide if Replication level data is included
+    if (input$Level == TRUE) {
+      df <- unique( MA_data %>% dplyr::select(!dplyr::matches("^Replication$")) )
+      df <- unique( MA_data %>% dplyr::select(!dplyr::matches("^Replication__")) )
+    } else {
+      df <- MA_data
+    }
+
+    # select multilab of interest
+    if (input$MultiLab != "all") {
+      df <- df[df$MultiLab == input$MultiLab,]
+    }
+
+    # select ReplicationProject of interest
+    if (input$ReplicationProject != "all") {
+      df <- df[df$ReplicationProject == input$ReplicationProject,]
+    }
+
+    # select Replication of interest
+    if (input$Replication != "all") {
+      df <- df[df$Replication == input$Replication,]
+    }
+
+    # exclude non effects
+    # if (input$exclude_0 == TRUE) {
+    #     df <- base::subset(df, abs(df$MA__Est__SMD) > 0.1 )
+    # }
+
+    df <- base::subset(df, abs(df$MA__Est__SMD) > input$exclude_effects)
+
+    # display the df with selection according to SampleSize, Statistics and AnalysisResults
+    if (input$Level == TRUE) { # this chunk runs if Replication level data is NOT included
+      df <- df %>%
+        dplyr::select(MultiLab,
+                      ReplicationProject,
+                      dplyr::contains(input$Statistics),
+                      dplyr::contains(input$SampleSize)) %>%
+        dplyr::select(MultiLab,
+                      ReplicationProject,
+                      dplyr::contains(input$AnalysisResults),
+                      dplyr::contains(input$SampleSize))
+    } else if (input$Level == FALSE & input$Stat_SE == FALSE) { # this chunk runs if Replication level data is included and SE included
+      df <- df %>%
+        dplyr::select(MultiLab,
+                      ReplicationProject,
+                      Replication,
+                      dplyr::contains(input$Statistics),
+                      dplyr::contains(input$SampleSize)) %>%
+        dplyr::select(MultiLab,
+                      ReplicationProject,
+                      Replication,
+                      dplyr::contains(input$AnalysisResults),
+                      dplyr::contains(input$SampleSize))
+
+    } else if (input$Level == FALSE & input$Stat_SE == TRUE) { # this chunk runs if Replication level data is included, but SE excluded
+      df <- df %>%
+        dplyr::select(MultiLab,
+                      ReplicationProject,
+                      Replication,
+                      dplyr::contains(input$Statistics),
+                      dplyr::contains(input$SampleSize)) %>%
+        dplyr::select(MultiLab,
+                      ReplicationProject,
+                      Replication,
+                      dplyr::contains(input$AnalysisResults),
+                      dplyr::contains(input$SampleSize)) %>%
+        dplyr::select(!dplyr::contains("__SE"))
+    }
+
+    # # exclude ln values
+    # if (input$Stat_ln != FALSE) {
+    #     df <- df %>%
+    #         dplyr::select(!dplyr::contains("ln_"))
+    # }
+    df <- unique(df)
+
+    df
+
+  })
+
+
+  ## download button
+
+  output$downloadData <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Data Selection-", Sys.Date(), ".csv", sep="")
+    },
+    content = function(file) {
+      readr::write_csv(data(),
+                       file,
+                       row.names = FALSE)
+    }
+  )
+
+  ### Data Exclusion
+
+  ## Exclusion
+
+  ## selectInput dependencies
+
+  shiny::observe({
+    shiny::updateSelectInput(session, "MultiLab_Exclusion",
+                             choices = multilab_choices())
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "ReplicationProject_Exclusion",
+                             choices = if (input$MultiLab_Exclusion == "all") { # return all ReplicationProjects
+                               c("all", replicationproject_choices())
+                             } else { # only return ReplicationProjects from the selected multilab
+                               MA_data <- MA_data()
+                               c("all", unique(MA_data[MA_data$MultiLab == input$MultiLab_Exclusion,]$ReplicationProject))
+                             }
+    )
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "Replication_Exclusion",
+                             choices = if (input$MultiLab_Exclusion == "all") {
+                               MA_data <- MA_data()
+                               c("all",unique(MA_data[MA_data$MultiLab == input$MultiLab_Exclusion,]$Replication))
+                             } else {
+                               MA_data <- MA_data()
+                               c("all", unique(MA_data[MA_data$MultiLab == input$MultiLab_Exclusion,]$Replication))
+                             }
+    )
+  })
+
+
+  ## Build df with exclusions
+  Data_Exclusions_reactive <- reactiveVal(as.data.frame(matrix(NA, ncol = 1, nrow = 1)))
+
+  data_to_be_excluded <- shiny::reactive({
+
+    # this line of code exists purely, to create a dependency between the reactive object data_excluded() and the remove exclusions process
+    # it does not and should not produce any output
+    if (is.na(input$remove_exclusion) == TRUE) {}
+
+    # this line of code exists purely, to create a dependency between the reactive object data_excluded() and the remove exclusions process
+    # it does not and should not produce any output
+    if (is.na(input$exclusion) == TRUE) {}
+
+    if (ncol(Data_Exclusions_reactive()) > 1) {
+      existing_exclusions <- dplyr::left_join(Data_Exclusions_reactive(), data())
+    } else {
+      existing_exclusions <- Data_Exclusions_reactive()
+    }
+
+    if (ncol(existing_exclusions) < 2 ) {
+
+      # if (input$MultiLab_Exclusion != "all" & input$ReplicationProject_Exclusion != "all") {
+      #   to_be_excluded <- rbind(data()[0,],
+      #                           data() %>% dplyr::filter(MultiLab == input$MultiLab_Exclusion &
+      #                                                      ReplicationProject == input$ReplicationProject_Exclusion))
+      # }else {
+      #   to_be_excluded <- data()[0,]
+      # }
+
+      to_be_excluded <- data()[0,]
+
+    } else {
+
+      if (input$MultiLab_Exclusion != "all" & input$ReplicationProject_Exclusion != "all" & input$Replication_Exclusion != "all") {
+        to_be_excluded <- rbind(data()[0,], data() %>% dplyr::filter(MultiLab == input$MultiLab_Exclusion &
+                                                                       ReplicationProject == input$ReplicationProject_Exclusion &
+                                                                       Replication == input$Replication_Exclusion))
+      } else if (input$MultiLab_Exclusion != "all" & input$ReplicationProject_Exclusion != "all" & input$Replication_Exclusion == "all"){
+        to_be_excluded <- rbind(existing_exclusions,
+                                data() %>% dplyr::filter(MultiLab == input$MultiLab_Exclusion &
+                                                           ReplicationProject == input$ReplicationProject_Exclusion))
+      } else if (input$MultiLab_Exclusion != "all" & input$ReplicationProject_Exclusion == "all" & input$Replication_Exclusion == "all") {
+        to_be_excluded <- rbind(existing_exclusions,
+                                data() %>% dplyr::filter(MultiLab == input$MultiLab_Exclusion))
+      } else if (input$MultiLab_Exclusion == "all" & input$ReplicationProject_Exclusion == "all" & input$Replication_Exclusion == "all"){
+        to_be_excluded <- rbind(existing_exclusions, data())
+      }
+
+    }
+
+    unique(to_be_excluded)
+
+  })
+
+
+  observeEvent(input$exclusion,{
+
+    Data_Exclusions_reactive(as.data.frame(data_to_be_excluded()))
+
+  })
+
+  data_excluded <- shiny::eventReactive(input$exclusion | input$remove_exclusion,{
+    Data_Exclusions_reactive()
+  })
+
+
+
+  output$excluded_data = DT::renderDT(
+    data_excluded(), options = list(lengthChange = FALSE)
+  )
+
+
+  ## Remove Exclusion
+
+  ## selectInput dependencies
+
+  shiny::observe({
+    shiny::updateSelectInput(session, "Remove_MultiLab_Exclusion",
+                             choices = multilab_choices())
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "Remove_ReplicationProject_Exclusion",
+                             choices = if (input$Remove_MultiLab_Exclusion == "all") { # return all replications
+                               c("all", replicationproject_choices())
+                             } else { # only return replications from the selected multilab
+                               MA_data <- MA_data()
+                               c("all", unique(MA_data[MA_data$MultiLab == input$Remove_MultiLab_Exclusion,]$ReplicationProject))
+                             }
+    )
+  })
+  shiny::observe({
+    shiny::updateSelectInput(session, "Remove_Replication_Exclusion",
+                             choices = if (input$Remove_MultiLab_Exclusion == "all") {
+                               MA_data <- MA_data()
+                               c("all",unique(MA_data[MA_data$MultiLab == input$Remove_MultiLab_Exclusion,]$Replication))
+                             } else {
+                               MA_data <- MA_data()
+                               c("all", unique(MA_data[MA_data$MultiLab == input$Remove_MultiLab_Exclusion,]$Replication))
+                             }
+    )
+  })
+
+
+  ##
+
+  data_excluded_removed <- shiny::reactive({
+
+    existing_exclusions <- Data_Exclusions_reactive()
+
+    if (input$Remove_MultiLab_Exclusion != "all" & input$Remove_ReplicationProject_Exclusion != "all" & input$Remove_Replication_Exclusion != "all") {
+
+      existing_exclusions %>% dplyr::filter(MultiLab != input$Remove_MultiLab_Exclusion |
+                                              ReplicationProject != input$Remove_ReplicationProject_Exclusion |
+                                              Replication != input$Remove_Replication_Exclusion)
+
+    } else if (input$Remove_MultiLab_Exclusion != "all" & input$Remove_ReplicationProject_Exclusion != "all" & input$Remove_Replication_Exclusion == "all"){
+
+      existing_exclusions %>% dplyr::filter(MultiLab != input$Remove_MultiLab_Exclusion |
+                                              ReplicationProject != input$Remove_ReplicationProject_Exclusion)
+
+    } else if (input$Remove_MultiLab_Exclusion != "all" & input$Remove_ReplicationProject_Exclusion == "all" & input$Remove_Replication_Exclusion == "all") {
+
+      existing_exclusions %>% dplyr::filter(MultiLab != input$Remove_MultiLab_Exclusion)
+
+    } else if (input$Remove_MultiLab_Exclusion == "all" & input$Remove_ReplicationProject_Exclusion == "all" & input$Remove_Replication_Exclusion == "all"){
+      existing_exclusions[0,]
+    }
+
+  })
+
+
+  ## create dependency on remove exclusion button
+
+  observeEvent(input$remove_exclusion, {
+
+    Data_Exclusions_reactive(as.data.frame(data_excluded_removed()))
+
+  })
+
+
+  remaining_data <- shiny::eventReactive(input$remove_exclusion | input$exclusion,{
+
+    if (ncol(Data_Exclusions_reactive()) > 1 ) {
+
+      data <- as.data.frame(data())
+
+      exclusions_full_columns <- dplyr::left_join(Data_Exclusions_reactive(), data)
+
+      column_compare <- janitor::compare_df_cols(data, exclusions_full_columns)
+
+      exclusions_full_columns <- exclusions_full_columns %>% dplyr::select(!column_compare[is.na(column_compare$data),]$column_name)
+
+      dplyr::setdiff(data, exclusions_full_columns)
+
+    } else {
+
+      data()
+
+    }
+
+  })
+
+  original_data <- shiny::reactive({
+
+    # create dependency on data() so original_data is created when data() is
+    if (ncol(data()) < 0 ) {}
+
+    if (ncol(Data_Exclusions_reactive()) > 1 ) {
+
+
+      data <- as.data.frame(data())
+
+      exclusions_full_columns <- dplyr::left_join(Data_Exclusions_reactive(), data)
+
+      column_compare <- janitor::compare_df_cols(data, exclusions_full_columns)
+
+      exclusions_full_columns <- exclusions_full_columns %>% dplyr::select(!column_compare[is.na(column_compare$data),]$column_name)
+
+      dplyr::setdiff(data, exclusions_full_columns)
+
+    } else {
+
+      data()
+
+    }
+
+  })
+
+
+
+  ## update data for plots
+
+  # histogram
+  observeEvent(input$upload_hist, {
+
+    shiny::updateVarSelectInput(session, "hist_data1",
+                                data = data())
+    shiny::updateVarSelectInput(session, "hist_data2",
+                                data = data())
+    shiny::updateVarSelectInput(session, "hist_data3",
+                                data = data())
+
+  })
+
+  # violin plot
+  observeEvent(input$upload_violin, {
+
+    shiny::updateVarSelectInput(session, "violin_1",
+                                data = data())
+    shiny::updateVarSelectInput(session, "violin_2",
+                                data = data())
+    shiny::updateVarSelectInput(session, "violin_3",
+                                data = data())
+    shiny::updateVarSelectInput(session, "violin_4",
+                                data = data())
+    shiny::updateVarSelectInput(session, "violin_5",
+                                data = data())
+    shiny::updateVarSelectInput(session, "violin_6",
+                                data = data())
+    shiny::updateVarSelectInput(session, "violin_point_size",
+                                data = data())
+
+  })
+
+  # scatter plot
+  observeEvent(input$upload_scatter, {
+
+    # Can also set the label and select items
+    shiny::updateVarSelectInput(session, "x_plot",
+                                data = data())
+    shiny::updateVarSelectInput(session, "y_plot",
+                                data = data())
+    shiny::updateVarSelectInput(session, "size_plot",
+                                data = data())
+    shiny::updateVarSelectInput(session, "color_plot",
+                                data = data())
+  })
+
+  # forest plot
+  observeEvent(input$upload_forest, {
+
+    shiny::updateVarSelectInput(session, "forest_data_statistics",
+                                data = data())
+    shiny::updateVarSelectInput(session, "forest_data_SE",
+                                data = data())
+    shiny::updateVarSelectInput(session, "forest_data_replication",
+                                data = data())
+
+  })
+
+  # funnel plot
+  observeEvent(input$upload_funnel, {
+
+    shiny::updateVarSelectInput(session, "funnel_data_est",
+                                data = data())
+    shiny::updateVarSelectInput(session, "funnel_data_SE",
+                                data = data())
+    shiny::updateVarSelectInput(session, "funnel_data_model_est",
+                                data = data())
+
+  })
+
+  # meta plot
+  observeEvent(input$upload_metaplot, {
+
+    shiny::updateVarSelectInput(session, "metaplot_data_est",
+                                data = data())
+    shiny::updateVarSelectInput(session, "metaplot_data_SE",
+                                data = data())
+    shiny::updateVarSelectInput(session, "metaplot_data_t_n",
+                                data = data())
+    shiny::updateVarSelectInput(session, "metaplot_data_c_n",
+                                data = data())
+
+  })
+
+  ## create output
+
+  # tab 1: Reactive Data Selection Table
+  output$selected_data = DT::renderDT(
+    original_data(), options = list(lengthChange = FALSE)
+  )
+
+
+
+  # tab 2: Reactive Excluded Data Table
+  # output$excluded_data = DT::renderDT(
+  #   data(), options = list(lengthChange = FALSE)
+  # )
+
+
+  # tab 2: Reactive Remaining Data Table
+  output$remaining_data = DT::renderDT(
+    remaining_data(), options = list(lengthChange = FALSE)
+  )
+
+
+
+  # tab 2: Histogram
+
+
+  hist_data <- shiny::reactive({
+
+    # select data from first input for the histogram
+    data1 <- unlist(original_data() %>% dplyr::select(input$hist_data1))
+    hist_data1 <- data.frame(Data = data1,
+                             Statistic = rep(
+                               base::subset(codebook, codebook$Variable_Name == input$hist_data1)$Variable_Description,
+                               times = length(data1)))
+    # select data from second input for the histogram
+    data2 <- unlist(original_data() %>% dplyr::select(input$hist_data2))
+    hist_data2 <- data.frame(Data = data2,
+                             Statistic = rep(
+                               base::subset(codebook, codebook$Variable_Name == input$hist_data2)$Variable_Description,
+                               times = length(data2)))
+    # select data from third input for the histogram
+    data3 <- unlist(original_data() %>% dplyr::select(input$hist_data3))
+    hist_data3 <- data.frame(Data = data3,
+                             Statistic = rep(
+                               base::subset(codebook, codebook$Variable_Name == input$hist_data3)$Variable_Description,
+                               times = length(data3)))
+
+    if (input$hist_include_variable2 == FALSE & input$hist_include_variable3 == FALSE) {
+      hist_data1
+    } else if (input$hist_include_variable2 == TRUE & input$hist_include_variable3 == FALSE) {
+      rbind(hist_data1, hist_data2)
+    } else if (input$hist_include_variable2 == FALSE & input$hist_include_variable3 == TRUE) {
+      rbind(hist_data1, hist_data3)
+    } else if (input$hist_include_variable2 == TRUE & input$hist_include_variable3 == TRUE) {
+      rbind(hist_data1, hist_data2, hist_data3)
+    }
+
+  })
+
+  hist_plot <- shiny::reactive({
+
+    hist_plot_output <- ggplot2::ggplot(hist_data(), aes(x = Data, fill = Statistic, color = Statistic)) +
+      geom_histogram(position="identity",alpha = 0.7) +
+      theme_light()
+
+    hist_plot_output
+
+  })
+
+
+  output$histogram <- shiny::renderPlot({
+    hist_plot()
+  })
+
+
+  ## download button
+
+  output$download_hist <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Histogram-", Sys.Date(), ".pdf", sep="")
+    },
+    content = function(file) {
+      grDevices::pdf(file=file, width = 15, height = 7)
+      plot(hist_plot())
+      grDevices::dev.off()
+    }
+  )
+
+
+  ## Data Point Display: Histogram
+
+  ## create reactive object with data for "hist_data_table" (info for data points)
+  hist_data_table_reactive <- shiny::reactive({
+
+    hist_data <- hist_data()
+
+    # store reactive object as data frame
+    data <- as.data.frame(data())
+
+
+    # select rows
+    if (is.null(input$hist_hover) == FALSE) {
+
+      if (input$hist_include_variable2 == TRUE & input$hist_include_variable3 == TRUE) {
+        base::subset(data,
+                     (data[,paste(input$hist_data1)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                        data[,paste(input$hist_data1)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
+                       (data[,paste(input$hist_data2)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                          data[,paste(input$hist_data2)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
+                       (data[,paste(input$hist_data3)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                          data[,paste(input$hist_data3)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) )
+      } else if (input$hist_include_variable2 == TRUE & input$hist_include_variable3 != TRUE){
+        base::subset(data,
+                     (data[,paste(input$hist_data1)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                        data[,paste(input$hist_data1)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
+                       (data[,paste(input$hist_data2)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                          data[,paste(input$hist_data2)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ))
+      } else if (input$hist_include_variable2 != TRUE & input$hist_include_variable3 != TRUE){
+        base::subset(data,
+                     data[,paste(input$hist_data1)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                       data[,paste(input$hist_data1)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80))
+      }
+
+    }else{}
+
+  })
+
+  ## create data table
+  output$hist_data_table <-  DT::renderDT({
+
+    as.data.frame(hist_data_table_reactive())
+
+  })
+
+
+
+  # tab 3: Violin Plot
+
+
+  violin_plot_data <- shiny::reactive({
+
+    # select data from first input for the histogram
+    data1 <- unlist(original_data() %>% dplyr::select(input$violin_1))
+    violin_1 <- data.frame(Data = data1,
+                           Statistic = rep(
+                             base::subset(codebook, codebook$Variable_Name == as.character(input$violin_1))$Variable_Description,
+                             times = length(data1)))
+    # select data from first input for the histogram
+    data2 <- unlist(original_data() %>% dplyr::select(input$violin_2))
+    violin_2 <- data.frame(Data = data2,
+                           Statistic = rep(
+                             base::subset(codebook, codebook$Variable_Name == input$violin_2)$Variable_Description,
+                             times = length(data2)))
+
+    # select data from first input for the histogram
+    data3 <- unlist(original_data() %>% dplyr::select(input$violin_3))
+    violin_3 <- data.frame(Data = data3,
+                           Statistic = rep(
+                             base::subset(codebook, codebook$Variable_Name == input$violin_3)$Variable_Description,
+                             times = length(data3)))
+
+    # select data from first input for the histogram
+    data4 <- unlist(original_data() %>% dplyr::select(input$violin_4))
+    violin_4 <- data.frame(Data = data4,
+                           Statistic = rep(
+                             base::subset(codebook, codebook$Variable_Name == input$violin_4)$Variable_Description,
+                             times = length(data4)))
+
+    # select data from first input for the histogram
+    data5 <- unlist(original_data() %>% dplyr::select(input$violin_5))
+    violin_5 <- data.frame(Data = data5,
+                           Statistic = rep(
+                             base::subset(codebook, codebook$Variable_Name == input$violin_5)$Variable_Description,
+                             times = length(data5)))
+
+    # select data from first input for the histogram
+    data6 <- unlist(original_data() %>% dplyr::select(input$violin_6))
+    violin_6 <- data.frame(Data = data6,
+                           Statistic = rep(
+                             base::subset(codebook, codebook$Variable_Name == input$violin_6)$Variable_Description,
+                             times = length(data6)))
+
+
+    vio_data_full <- if (input$include_violins == 1) {
+      violin_data <- violin_1
+    } else if (input$include_violins == 2) {
+      violin_data <- rbind(violin_1, violin_2)
+    } else if (input$include_violins == 3) {
+      violin_data <- rbind(violin_1, violin_2, violin_3)
+    } else if (input$include_violins == 4) {
+      violin_data <- rbind(violin_1, violin_2, violin_3, violin_4)
+    } else if (input$include_violins == 5) {
+      violin_data <- rbind(violin_1, violin_2, violin_3, violin_4, violin_5)
+    } else if (input$include_violins == 6) {
+      violin_data <- rbind(violin_1, violin_2, violin_3, violin_4, violin_5, violin_6)
+    }
+
+    if (input$violin_include_point_size == FALSE) {
+      violin_data$dot_size <- rep(1, base::nrow(violin_data) )
+    } else if (input$violin_include_point_size == TRUE ) {
+      violin_data$dot_size <- rep(unlist(original_data() %>% dplyr::select(input$violin_point_size)), input$include_violins)
+    }
+
+
+    # delete redundant level information
+    violin_data$common_level <- rep(base::strsplit(violin_data$Statistic, ":")[[1]][1], base::nrow(violin_data))
+    violin_data$Statistic <- gsub("meta analysis level: ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("lab level: ", "", violin_data$Statistic)
+    # delete redundant statistic information
+    violin_data$common_statistic <- rep(base::strsplit(violin_data$Statistic, " for")[[1]][1], base::nrow(violin_data))
+    violin_data$Statistic <- gsub("model estimate for ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("Tau2 for ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("Tau for ", "")
+    violin_data$Statistic <- gsub("CoeffVar for ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("I2 for ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("H2 for ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("QE for ", "", violin_data$Statistic)
+    violin_data$Statistic <- gsub("QEp for ", "", violin_data$Statistic)
+
+    # tell ggplot to take the order of the vector and stop it from making it alphabetical
+    violin_data$Statistic <- factor(violin_data$Statistic, levels = unique(violin_data$Statistic))
+
+    violin_data
+
+  })
+
+
+  output$violin_plot <- shiny::renderPlot({
+
+    violin_data <- as.data.frame(violin_plot_data())
+
+    p <- ggplot2::ggplot(violin_data, aes(x=Statistic, y=Data)) +
+      geom_violin(trim=TRUE) #+ scale_y_discrete(expand = c(3,5))
+
+    if (input$violin_include_point_size == TRUE) {
+
+      violin_plot_output <- p + geom_boxplot(width = 0.1) +
+        geom_jitter(width = 0.3, aes(color = Statistic, size = dot_size), alpha = 0.7) +
+        guides( color = "none") +
+        theme_light() +
+        theme(text = element_text(size=15)) +
+        theme(axis.title.x = element_blank()) +
+        scale_x_discrete(guide = guide_axis(n.dodge=3)) +
+        labs(title = unique(violin_data$common_level),
+             subtitle = if (unique(violin_data$common_level) == "meta analysis level") {unique(violin_data$common_statistic)} else {}) +
+        scale_size_continuous( gsub("lab level: ", "", gsub("meta analysis level: ", "", base::subset(codebook, codebook$Variable_Name == input$violin_point_size)$Variable_Description)) )
+
+
+    } else {
+
+      violin_plot_output <- p + geom_boxplot(width = 0.1) +
+        geom_jitter(width = 0.3, aes(color = Statistic, size = dot_size), alpha = 0.7) +
+        guides( color = "none") +
+        theme_light() +
+        theme(text = element_text(size=15)) +
+        theme(axis.title.x = element_blank()) +
+        scale_x_discrete(guide = guide_axis(n.dodge=3)) +
+        labs(title = unique(violin_data$common_level),
+             subtitle = if (unique(violin_data$common_level) == "meta analysis level") {unique(violin_data$common_statistic)} else {}) +
+        guides(size = "none")
+    }
+
+
+    violin_plot_output
+
+  })
+
+
+
+  ## download button
+
+  output$download_violin <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Violin Plot-", Sys.Date(), ".pdf", sep="")
+    },
+    content = function(file) {
+      grDevices::pdf(file=file, width = 15, height = 7)
+      plot(violin_plot())
+      grDevices::dev.off()
+    }
+  )
+
+  ## Data Point Display: Violin Plot
+
+  ## create reactive object with data for "violin_data_table" (info for data points)
+  violin_data_table_reactive <- shiny::reactive({
+
+    violin_data <- as.data.frame(violin_plot_data())
+
+    # store reactive object as data frame
+    data <- as.data.frame(data())
+
+    # select rows
+    if (is.null(input$violin_hover) == FALSE) {
+
+      if (unique(violin_data$common_level) == "meta analysis level") {
+        base::subset(data,
+                     data[codebook$Variable_Name[grepl(unique(violin_data$common_statistic), codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] < (round(as.numeric(input$violin_hover[2]), 0) + max(violin_data$Data, na.rm = TRUE)/80) &
+                       data[codebook$Variable_Name[grepl(unique(violin_data$common_statistic), codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] > (round(as.numeric(input$violin_hover[2]), 0) - max(violin_data$Data, na.rm = TRUE)/80))
+      } else if (unique(violin_data$common_level) == "replication level") {
+        base::subset(data,
+                     data[codebook$Variable_Name[grepl("replication level", codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] < (round(as.numeric(input$violin_hover[2]), 0) + max(violin_data$Data, na.rm = TRUE)/80) &
+                       data[codebook$Variable_Name[grepl("replication level", codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] > (round(as.numeric(input$violin_hover[2]), 0) - max(violin_data$Data, na.rm = TRUE)/80))
+      }
+
+
+
+    }else{}
+
+  })
+
+  ## create data table
+  output$violin_data_table <-  DT::renderDT({
+
+    as.data.frame(violin_data_table_reactive())
+
+  })
+
+
+
+  # tab 4: Scatter Plot
+
+  scatter_plot_data <- shiny::reactive({
+
+    # Plot Data
+    X <- unlist(original_data() %>% dplyr::select(input$x_plot))
+    Y <- unlist(original_data() %>% dplyr::select(input$y_plot))
+    Point_Size <- as.numeric(unlist(original_data() %>% dplyr::select(input$size_plot)))
+    Point_Color <- as.numeric(unlist(original_data() %>% dplyr::select(input$color_plot)))
+    plot_data_full <- as.data.frame(cbind(X,Y, Point_Size, Point_Color))
+    names(plot_data_full)[1] <- "X"
+    names(plot_data_full)[2] <- "Y"
+    names(plot_data_full)[3] <- "Point_Size"
+    names(plot_data_full)[4] <- "Point_Color"
+
+    if (input$include_custom_lims == TRUE) {
+      plot_data <- dplyr::filter(plot_data_full, X >= input$x_min_plot, X <= input$x_max_plot, Y >= input$y_min_plot, Y <= input$y_max_plot)
+    }else{
+      plot_data <- plot_data_full
+    }
+
+    # calculate the correlation matrix (after removing NA) and select the correlation between X and Y
+    plot_data$cor_x_y <- rep(stats::cor(stats::na.omit(data.frame( X = plot_data$X, Y = plot_data$Y)))[1,2], base::nrow(plot_data))
+
+    plot_data
+
+  })
+
+
+  output$scatter_plot <- shiny::renderPlot({
+
+    plot_data <- as.data.frame(scatter_plot_data())
+
+    # plot_data <- plot_data[ vals_scatter$keeprows, , drop = FALSE]
+    # exclude <- plot_data[!vals_scatter$keeprows, , drop = FALSE]
+
+    # Plotting
+
+    scatter_plot_output <- ggplot2::ggplot(plot_data, aes(x = X, y = Y)) +
+      geom_point(aes(colour = if (input$include_point_color == TRUE) {Point_Color}else{},
+                     size = if (input$include_point_size == TRUE) {Point_Size}else{} )) +
+      theme_light() +
+      ggplot2::ggtitle(paste("Correlation between currently depicted X and Y data:", round(unique(plot_data$cor_x_y), digits = 2), "(NA removed)" )) +
+      xlab(base::subset(codebook, codebook$Variable_Name == input$x_plot)$Variable_Description) +
+      ylab(base::subset(codebook, codebook$Variable_Name == input$y_plot)$Variable_Description) +
+      scale_colour_continuous( if (input$include_point_color == TRUE) {base::subset(codebook, codebook$Variable_Name == input$color_plot)$Variable_Description}else{} ) +
+      scale_size_continuous( if (input$include_point_size == TRUE) {base::subset(codebook, codebook$Variable_Name == input$size_plot)$Variable_Description}else{} )
+
+    scatter_plot_output
+
+  })
+
+  ## Data Point Display: Scatter Plot
+
+  ## create reactive object with data for "violin_data_table" (info for data points)
+  scatter_data_table_reactive <- shiny::reactive({
+
+    scatter_data <- scatter_plot_data()
+
+    # store reactive object as data frame
+    data <- as.data.frame(data())
+
+    # select rows
+    if (is.null(input$scatter_hover) == FALSE) {
+
+      base::subset(data, data[,paste(input$x_plot)] < (round(as.numeric(input$scatter_hover[1]), 0) +  max(scatter_data$X, na.rm = TRUE)/80) &
+                     data[,paste(input$x_plot)] > (round(as.numeric(input$scatter_hover[1]), 0) -  max(scatter_data$X, na.rm = TRUE)/80) &
+                     data[,paste(input$y_plot)] < (round(as.numeric(input$scatter_hover[2]), 0) +  max(scatter_data$Y, na.rm = TRUE)/80) &
+                     data[,paste(input$y_plot)] > (round(as.numeric(input$scatter_hover[2]), 0) -  max(scatter_data$Y, na.rm = TRUE)/80)
+
+      )
+
+    }else{}
+
+  })
+
+  ## create data table
+  output$scatter_data_table <-  DT::renderDT({
+
+    as.data.frame(scatter_data_table_reactive())
+
+  })
+
+  ## download button
+
+  output$download_scatter <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Scatter Plot-", Sys.Date(), ".pdf", sep="")
+    },
+    content = function(file) {
+      grDevices::pdf(file=file, width = 15, height = 7.5)
+      plot(scatter_plot())
+      grDevices::dev.off()
+    }
+  )
+
+
+  # tab 5: Forest Plot
+
+  forest_plot <- shiny::reactive({
+
+    #X <- unlist(data() %>% dplyr::select(input$x_plot))
+
+    plot_data <- data.frame(Est = as.numeric(unlist(original_data() %>% dplyr::select(input$forest_data_statistics))),
+                            SE = as.numeric(unlist(original_data() %>% dplyr::select(input$forest_data_SE))),
+                            Unit = unlist(original_data() %>% dplyr::select(input$forest_data_replication)))
+
+    metafor::forest(x = plot_data[,"Est"],
+                    sei = plot_data[,"SE"],
+                    slab = plot_data[,c("Unit")],
+                    xlab = base::subset(codebook, codebook$Variable_Name == input$forest_data_statistics)$Variable_Description)
+
+  })
+
+  output$forest_plot <- shiny::renderPlot({
+    forest_plot()
+  })
+
+  ## download button
+
+  output$download_forest <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Forest Plot-", Sys.Date(), ".pdf", sep="")
+    },
+    content = function(file) {
+      grDevices::pdf(file=file, width = 10, height = 12)
+      plot(forest_plot())
+      grDevices::dev.off()
+    }
+  )
+
+  # tab 6: Funnel Plot
+
+
+  funnel_data <- shiny::reactive({
+
+    data.frame(Est = as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_est))),
+               SE = as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_SE))),
+               Model_Est = as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_model_est))),
+               x_lab = rep(
+                 base::subset(codebook, codebook$Variable_Name == input$funnel_data_est)$Variable_Description,
+                 times = length(as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_est)))))
+    )
+
+  })
+
+  funnel_plot <- shiny::reactive({
+
+    plot_data <- funnel_data()
+
+    metafor::funnel(x = plot_data$Est,
+                    sei = plot_data$SE,
+                    refline = unique(plot_data$Model_Est),
+                    xlab = unique(plot_data$x_lab))
+
+  })
+
+  output$funnel_plot <- shiny::renderPlot({
+    funnel_plot()
+  })
+
+
+  ## Data Point Display: Funnel Plot
+
+  ## create reactive object with data for "funnel_data_table" (info for data points)
+  funnel_data_table_reactive <- shiny::reactive({
+
+    funnel_data <- funnel_data()
+
+    # store reactive object as data frame
+    data <- as.data.frame(data())
+
+    # select rows
+    if (is.null(input$funnel_hover) == FALSE) {
+
+      base::subset(data, data[,paste(input$funnel_data_est)] < (round(as.numeric(input$funnel_hover[1]), 2) +  max(funnel_data$Est, na.rm = TRUE)/20) &
+                     data[,paste(input$funnel_data_est)] > (round(as.numeric(input$funnel_hover[1]), 2) -  max(funnel_data$Est, na.rm = TRUE)/20) &
+                     data[,paste(input$funnel_data_SE)] < (round(as.numeric(input$funnel_hover[2]), 2) +  max(funnel_data$SE, na.rm = TRUE)/20) &
+                     data[,paste(input$funnel_data_SE)] > (round(as.numeric(input$funnel_hover[2]), 2) -  max(funnel_data$SE, na.rm = TRUE)/20))
+    }else{}
+
+  })
+
+  ## create data table
+  output$funnel_data_table <-  DT::renderDT({
+
+    as.data.frame(funnel_data_table_reactive())
+
+  })
+
+
+
+
+  funnel_CE_plot <- shiny::reactive({
+
+    #X <- unlist(data() %>% dplyr::select(input$x_plot))
+
+    plot_data <- data.frame(Est = as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_est))),
+                            SE = as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_SE))),
+                            Model_Est = as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_model_est))),
+                            x_lab = rep(
+                              base::subset(codebook, codebook$Variable_Name == input$funnel_data_est)$Variable_Description,
+                              times = length(as.numeric(unlist(original_data() %>% dplyr::select(input$funnel_data_est)))))
+    )
+
+    metafor::funnel(x = plot_data$Est,
+                    sei = plot_data$SE,
+                    refline = 0,
+                    xlab = unique(plot_data$x_lab),
+                    level=c(90, 95, 99),
+                    shade=c("white", "gray55", "gray75"))
+
+  })
+
+  output$funnel_CE_plot <- shiny::renderPlot({
+    funnel_CE_plot()
+  })
+
+  ## download button
+
+  output$download_funnel <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Funnel Plot-", Sys.Date(), ".pdf", sep="")
+    },
+    content = function(file) {
+      grDevices::pdf(file=file, width = 10, height = 12)
+      plot(funnel_plot())
+      grDevices::dev.off()
+    }
+  )
+
+  # tab 7: Meta Plot
+
+  meta_plot <- shiny::reactive({
+
+    #X <- unlist(data() %>% dplyr::select(input$x_plot))
+
+    plot_data <- data.frame(Est = as.numeric(unlist(original_data() %>% dplyr::select(input$metaplot_data_est))),
+                            SE = as.numeric(unlist(original_data() %>% dplyr::select(input$metaplot_data_SE))),
+                            T_N = as.numeric(unlist(original_data() %>% dplyr::select(input$metaplot_data_t_n))),
+                            C_N =as.numeric(unlist(original_data() %>% dplyr::select(input$metaplot_data_c_n))))
+
+    puniform::meta_plot(gi = plot_data$Est,
+                        vgi = plot_data$SE^2,
+                        n1i = plot_data$T_N,
+                        n2i = plot_data$C_N)
+
+
+
+  })
+
+  output$metaplot <- shiny::renderPlot({
+    meta_plot()
+  })
+
+  ## download button
+
+  output$download_funnel <- shiny::downloadHandler(
+    filename = function() {
+      paste("MetaPipeX Funnel Plot-", Sys.Date(), ".pdf", sep="")
+    },
+    content = function(file) {
+      grDevices::pdf(file=file, width = 10, height = 12)
+      plot(funnel_plot())
+      grDevices::dev.off()
+    }
+  )
+
+
+  # tab 8: Codebook Display
+  output$codebook = DT::renderDT(
+    codebook, options = list(lengthChange = FALSE)
+  )
+
+  # tab 8: Codebook Text
+
+  output$codebook_text <- shiny::renderText({
+    codebook_text_vec
+  })
+
+
+})
