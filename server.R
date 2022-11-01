@@ -4,6 +4,8 @@
 server <- function(input, output, session){
 
 
+  options(shiny.maxRequestSize = 500*1024^2)
+
 
   ## this chunk is somewhat part of the UI: it creates the "confirm upload" button, dependent on data being supplied
   # the dependency is created so that the app does not crash due to analyses being run without any input
@@ -26,8 +28,16 @@ server <- function(input, output, session){
       # extract upload info from UI input
       upload_info <- input$IPD
 
-      # import all selected .csv data
-      lapply(upload_info$datapath,readr::read_csv)
+      # import all selected data
+      if (base::length(base::grep(".csv", upload_info$datapath)) > 0) {
+        base::lapply(upload_info$datapath,readr::read_csv)
+        }
+      else if (base::length(base::grep(".sav", upload_info$datapath)) > 0) {
+          base::lapply(upload_info$datapath, function(x){foreign::read.spss(x, to.data.frame=TRUE)})
+        }
+      else if (base::length(base::grep(".rds", upload_info$datapath))  > 0){
+        base::lapply(upload_info$datapath,base::readRDS)
+      }else{}
 
     } else {
 
@@ -70,9 +80,13 @@ server <- function(input, output, session){
                              selected = if ( any(IPD_raw_data_input_columns() == "Group") ) {"Group"}else{})
   })
 
+
+  # create empty reactive values object
+  IPD_reactive_Values <- reactiveValues()
+
   # run the pipeline, as soon as the column selection is confirmed
 
-  IPD_data_input <- shiny::eventReactive( input$confirm_upload, {
+  shiny::observeEvent(input$confirm_upload,{ # stores results in IPD_reactive_Values
 
     IPD_list <- IPD_list()
 
@@ -96,7 +110,6 @@ server <- function(input, output, session){
                             if (input$create_custom_replicationproject_col == TRUE) {
                               IPD_list <- IPD_list[[1]] %>% dplyr::group_split( ReplicationProject )
                             } else {
-                              # IPD_list <- IPD_list[[1]] %>% dplyr::group_split( toString(input$replicationproject_col) )
 
                               unique_replicationprojects <- unlist(unique(IPD_list[[1]][,input$replicationproject_col]))
 
@@ -112,19 +125,31 @@ server <- function(input, output, session){
 
                           # reduce to the relevant columns
                           reduce_cols <- function(x){
-
-                            IPD_list[[x]] <- base::subset(IPD_list[[x]], select =  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col},
-                                                                                     if(input$create_custom_replicationproject_col == TRUE){"ReplicationProject"}else{input$replicationproject_col},
-                                                                                     input$replication_col,
-                                                                                     input$DV_col,
-                                                                                     input$group_col))
-
+                            single_df <- base::subset(IPD_list[[x]], select =  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col},
+                                                                                 if(input$create_custom_replicationproject_col == TRUE){"ReplicationProject"}else{input$replicationproject_col},
+                                                                                 input$replication_col,
+                                                                                 input$DV_col,
+                                                                                 input$group_col))
+                            IPD_list[[x]] <- single_df
                           }
+
                           IPD_list <- lapply(1:length(IPD_list), reduce_cols)
 
                           # remove NA
                           IPD_list <- lapply(1:length(IPD_list), function(x){IPD_list[[x]] <- stats::na.omit(IPD_list[[x]])})
 
+                          # modify variables that could be in in an annoying format (added after trying to import a .sav file)
+                          IPD_list <- lapply(1:length(IPD_list), function(x){
+                            single_df <- data.frame(
+                              IPD_list[[x]][[if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col}]],
+                              IPD_list[[x]][[if(input$create_custom_multilab_col == TRUE){"ReplicationProject"}else{input$replicationproject_col}]],
+                              as.character(IPD_list[[x]][[input$replication_col]]),
+                              IPD_list[[x]][[input$DV_col]],
+                              abs(as.numeric(unlist(IPD_list[[x]][[input$group_col]]))-1)
+                            )
+                            names(single_df) <-  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col}, if(input$create_custom_multilab_col == TRUE){"ReplicationProject"}else{input$replicationproject_col}, input$replication_col, input$DV_col, input$group_col)
+                            IPD_list[[x]] <- single_df
+                          })
 
                           # run the pipeline function
                           IPD_analzed <- MetaPipeX::full_pipeline(data = IPD_list,
@@ -132,18 +157,18 @@ server <- function(input, output, session){
                                                                   ReplicationProject = if(input$create_custom_replicationproject_col == TRUE){}else{input$replicationproject_col},
                                                                   Replication = input$replication_col,
                                                                   DV = input$DV_col,
-                                                                  Group = input$group_col,
-                                                                  output_path = input$output_folder_set,
-                                                                  folder_name = if (length(input$output_folder_set) > 1) {"MetaPipeX_Output"}else{}
+                                                                  Group = input$group_col
                           )
+
+
 
                         })
 
-    IPD_analzed$`5_Meta_Pipe_X`$MetaPipeX_Data
+
+    IPD_reactive_Values$IPD_data <- IPD_analzed
+    IPD_reactive_Values$IPD_data_input <- IPD_analzed$`5_Meta_Pipe_X`$MetaPipeX_Data
 
   })
-
-
 
   ### ReplicationSum Input
 
@@ -162,18 +187,16 @@ server <- function(input, output, session){
                         style = "old",
                         {
                           # merge the Replication summaries
-                          ReplicationSum_merged <- MetaPipeX::merge_replication_summaries(data = ReplicationSum_list,
-                                                                                          output_folder = input$output_folder_set)
+                          ReplicationSum_merged <- MetaPipeX::merge_replication_summaries(data = ReplicationSum_list)
 
                           # run meta analyses
-                          ReplicationSum_analyzed <- MetaPipeX::meta_analyses(data = ReplicationSum_merged$merged_replication_summaries,
-                                                                              output_folder = input$output_folder_set)
+                          ReplicationSum_analyzed <- MetaPipeX::meta_analyses(data = ReplicationSum_merged$Merged_Replication_Summaries)
 
                           ## combine Replication and meta analysis data
 
                           # reorder data frames
-                          merged_replication_summaries <- dplyr::arrange(ReplicationSum_merged$merged_replication_summaries, ReplicationProject)
-                          meta_analyses <- dplyr::arrange(ReplicationSum_analyzed$meta_analyses, ReplicationProject)
+                          merged_replication_summaries <- dplyr::arrange(ReplicationSum_merged$Merged_Replication_Summaries, ReplicationProject)
+                          meta_analyses <- dplyr::arrange(ReplicationSum_analyzed$Meta_Analyses, ReplicationProject)
 
                           # number of Replications per ReplicationProject (= "How many Replications are in each ReplicationProject?")
                           k_per_ReplicationProject <- merged_replication_summaries %>%
@@ -302,14 +325,13 @@ server <- function(input, output, session){
                         style = "old",
                         {
                           # run meta analyses
-                          ReplicationSum_analyzed <- MetaPipeX::meta_analyses(data = MergedReplicationSum,
-                                                                              output_folder = input$output_folder_set)
+                          ReplicationSum_analyzed <- MetaPipeX::meta_analyses(data = MergedReplicationSum)
 
                           ## combine replication and meta analysis data
 
                           # reorder data frames
                           merged_replication_summaries <- dplyr::arrange(MergedReplicationSum, ReplicationProject)
-                          meta_analyses <- dplyr::arrange(ReplicationSum_analyzed$meta_analyses, ReplicationProject)
+                          meta_analyses <- dplyr::arrange(ReplicationSum_analyzed$Meta_Analyses, ReplicationProject)
 
                           # number of replications per ReplicationProject (= "How many replications are in each ReplicationProject?")
                           k_per_ReplicationProject <- merged_replication_summaries %>%
@@ -436,7 +458,7 @@ server <- function(input, output, session){
     } else if (input$select_upload == "ReplicationSum") {
       ReplicationSum_data_input()
     } else if (input$select_upload == "IPD") {
-      IPD_data_input()
+      IPD_reactive_Values$IPD_data_input
     } else {
       c()
     }
@@ -578,17 +600,61 @@ server <- function(input, output, session){
   })
 
 
-  ## download button
-
+  ## download button for data as displayed
   output$downloadData <- shiny::downloadHandler(
     filename = function() {
       paste("MetaPipeX Data Selection-", Sys.Date(), ".csv", sep="")
     },
     content = function(file) {
       readr::write_csv(data(),
-                       file,
-                       row.names = FALSE)
+                       file)
     }
+  )
+
+  ## download button for the full MetaPipeX Output dDrectory (only for IPD upload)
+  output$out_zip_download <- renderUI({
+    if (input$select_upload == "IPD") {
+      downloadButton("zip_download", "Download MetaPipeX Output Directory")
+    }else{}
+  })
+
+  ## create download handler for the full MetaPipeX Output directory
+  output$zip_download <- shiny::downloadHandler(
+    filename = 'MetaPipeX_Output.zip',
+    content = function(file){
+      # create directory
+      dir.create("MetaPipeX_folder")
+      # create folder for individual participant data
+      dir.create(paste("MetaPipeX_folder", "/1_Individual_Participant_Data", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`1_Individual_Participant_Data`$codebook_for_individual_participant_data, paste("MetaPipeX_folder/1_Individual_Participant_Data/codebook_for_individual_participant_data.csv", sep = ""))
+      lapply(1:length(IPD_reactive_Values$IPD_data$`1_Individual_Participant_Data`$Individual_Participant_Data),
+             function(x){readr::write_csv(IPD_reactive_Values$IPD_data$`1_Individual_Participant_Data`$Individual_Participant_Data[[x]],
+                                          paste("MetaPipeX_folder/1_Individual_Participant_Data/", names(IPD_reactive_Values$IPD_data$`1_Individual_Participant_Data`$Individual_Participant_Data)[x], ".csv", sep = ""))})
+
+      # create folder for replication summaries
+      dir.create(paste("MetaPipeX_folder", "/2_Replication_Summaries", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`2_Replication_Summaries`$codebook_for_replication_summaries, paste("MetaPipeX_folder/2_Replication_Summaries/codebook_for_replication_summaries.csv", sep = ""))
+      lapply(1:length(IPD_reactive_Values$IPD_data$`2_Replication_Summaries`$Replication_Summaries),
+             function(x){readr::write_csv(IPD_reactive_Values$IPD_data$`2_Replication_Summaries`$Replication_Summaries[[x]],
+                                          paste("MetaPipeX_folder/2_Replication_Summaries/", names(IPD_reactive_Values$IPD_data$`2_Replication_Summaries`$Replication_Summaries)[x], ".csv", sep = ""))})
+      # create folder for merged replication summaries
+      dir.create(paste("MetaPipeX_folder", "/3_Merged_Replication_Summaries", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`3_Merged_Replication_Summaries`$codebook_for_merged_replication_summeries, paste("MetaPipeX_folder/3_Merged_Replication_Summaries/codebook_for_merged_replication_summeries.csv", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`3_Merged_Replication_Summaries`$Merged_Replication_Summaries, paste("MetaPipeX_folder/3_Merged_Replication_Summaries/Merged_Replication_Summaries.csv", sep = ""))
+      # create folder for meta analyses
+      dir.create(paste("MetaPipeX_folder", "/4_Meta_Analyses", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`4_Meta_Analyses`$codebook_for_meta_analyses, paste("MetaPipeX_folder/4_Meta_Analyses/codebook_for_meta_analyses.csv", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`4_Meta_Analyses`$Meta_Analyses, paste("MetaPipeX_folder/4_Meta_Analyses/Meta_Analyses.csv", sep = ""))
+      # create folder for meta analyses
+      dir.create(paste("MetaPipeX_folder", "/5_Meta_Pipe_X", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`5_Meta_Pipe_X`$codebook_for_meta_pipe_x, paste("MetaPipeX_folder/5_Meta_Pipe_X/codebook_for_meta_pipe_x.csv", sep = ""))
+      readr::write_csv(IPD_reactive_Values$IPD_data$`5_Meta_Pipe_X`$MetaPipeX_Data, paste("MetaPipeX_folder/5_Meta_Pipe_X/MetaPipeX_Data.csv", sep = ""))
+      # output
+      zip(file, "MetaPipeX_folder")
+      unlink("MetaPipeX_folder", recursive = TRUE)
+
+    },
+    contentType = "application/zip"
   )
 
   ### Data Exclusion
@@ -987,7 +1053,6 @@ server <- function(input, output, session){
     }
   )
 
-
   ## Data Point Display: Histogram
 
   ## create reactive object with data for "hist_data_table" (info for data points)
@@ -1004,22 +1069,22 @@ server <- function(input, output, session){
 
       if (input$hist_include_variable2 == TRUE & input$hist_include_variable3 == TRUE) {
         base::subset(data,
-                     (data[,paste(input$hist_data1)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
-                        data[,paste(input$hist_data1)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
-                       (data[,paste(input$hist_data2)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
-                          data[,paste(input$hist_data2)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
-                       (data[,paste(input$hist_data3)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
-                          data[,paste(input$hist_data3)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) )
+                     (data[,paste(input$hist_data1)] < (input$hist_hover$x  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                        data[,paste(input$hist_data1)] > (input$hist_hover$x  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
+                       (data[,paste(input$hist_data2)] < (input$hist_hover$x  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                          data[,paste(input$hist_data2)] > (input$hist_hover$x  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
+                       (data[,paste(input$hist_data3)] < (input$hist_hover$x  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                          data[,paste(input$hist_data3)] > (input$hist_hover$x  -  max(hist_data$Data, na.rm = TRUE)/80) ) )
       } else if (input$hist_include_variable2 == TRUE & input$hist_include_variable3 != TRUE){
         base::subset(data,
-                     (data[,paste(input$hist_data1)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
-                        data[,paste(input$hist_data1)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
-                       (data[,paste(input$hist_data2)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
-                          data[,paste(input$hist_data2)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80) ))
+                     (data[,paste(input$hist_data1)] < (input$hist_hover$x  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                        data[,paste(input$hist_data1)] > (input$hist_hover$x  -  max(hist_data$Data, na.rm = TRUE)/80) ) |
+                       (data[,paste(input$hist_data2)] < (input$hist_hover$x  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                          data[,paste(input$hist_data2)] > (input$hist_hover$x  -  max(hist_data$Data, na.rm = TRUE)/80) ))
       } else if (input$hist_include_variable2 != TRUE & input$hist_include_variable3 != TRUE){
         base::subset(data,
-                     data[,paste(input$hist_data1)] < (round(input$hist_hover$x, 0)  +  max(hist_data$Data, na.rm = TRUE)/80) &
-                       data[,paste(input$hist_data1)] > (round(input$hist_hover$x, 0)  -  max(hist_data$Data, na.rm = TRUE)/80))
+                     data[,paste(input$hist_data1)] < (input$hist_hover$x  +  max(hist_data$Data, na.rm = TRUE)/80) &
+                       data[,paste(input$hist_data1)] > (input$hist_hover$x  -  max(hist_data$Data, na.rm = TRUE)/80))
       }
 
     }else{}
@@ -1200,10 +1265,9 @@ server <- function(input, output, session){
                        data[codebook$Variable_Name[grepl(unique(violin_data$common_statistic), codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] > (round(as.numeric(input$violin_hover[2]), 0) - max(violin_data$Data, na.rm = TRUE)/80))
       } else if (unique(violin_data$common_level) == "replication level") {
         base::subset(data,
-                     data[codebook$Variable_Name[grepl("replication level", codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] < (round(as.numeric(input$violin_hover[2]), 0) + max(violin_data$Data, na.rm = TRUE)/80) &
-                       data[codebook$Variable_Name[grepl("replication level", codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] > (round(as.numeric(input$violin_hover[2]), 0) - max(violin_data$Data, na.rm = TRUE)/80))
+                     data[codebook$Variable_Name[grepl("replication level", codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] < (as.numeric(input$violin_hover[2]) + max(violin_data$Data, na.rm = TRUE)/80) &
+                       data[codebook$Variable_Name[grepl("replication level", codebook$Variable_Description) & grepl(unique(violin_data$Statistic)[round(as.numeric(input$violin_hover[1]), digits = 0)], codebook$Variable_Description)]] > (as.numeric(input$violin_hover[2]) - max(violin_data$Data, na.rm = TRUE)/80))
       }
-
 
 
     }else{}
@@ -1284,10 +1348,10 @@ server <- function(input, output, session){
     # select rows
     if (is.null(input$scatter_hover) == FALSE) {
 
-      base::subset(data, data[,paste(input$x_plot)] < (round(as.numeric(input$scatter_hover[1]), 0) +  max(scatter_data$X, na.rm = TRUE)/80) &
-                     data[,paste(input$x_plot)] > (round(as.numeric(input$scatter_hover[1]), 0) -  max(scatter_data$X, na.rm = TRUE)/80) &
-                     data[,paste(input$y_plot)] < (round(as.numeric(input$scatter_hover[2]), 0) +  max(scatter_data$Y, na.rm = TRUE)/80) &
-                     data[,paste(input$y_plot)] > (round(as.numeric(input$scatter_hover[2]), 0) -  max(scatter_data$Y, na.rm = TRUE)/80)
+      base::subset(data, data[,paste(input$x_plot)] < (as.numeric(input$scatter_hover[1]) +  max(scatter_data$X, na.rm = TRUE)/80) &
+                     data[,paste(input$x_plot)] > (as.numeric(input$scatter_hover[1]) -  max(scatter_data$X, na.rm = TRUE)/80) &
+                     data[,paste(input$y_plot)] < (as.numeric(input$scatter_hover[2]) +  max(scatter_data$Y, na.rm = TRUE)/80) &
+                     data[,paste(input$y_plot)] > (as.numeric(input$scatter_hover[2]) -  max(scatter_data$Y, na.rm = TRUE)/80)
 
       )
 
@@ -1394,10 +1458,10 @@ server <- function(input, output, session){
     # select rows
     if (is.null(input$funnel_hover) == FALSE) {
 
-      base::subset(data, data[,paste(input$funnel_data_est)] < (round(as.numeric(input$funnel_hover[1]), 2) +  max(funnel_data$Est, na.rm = TRUE)/20) &
-                     data[,paste(input$funnel_data_est)] > (round(as.numeric(input$funnel_hover[1]), 2) -  max(funnel_data$Est, na.rm = TRUE)/20) &
-                     data[,paste(input$funnel_data_SE)] < (round(as.numeric(input$funnel_hover[2]), 2) +  max(funnel_data$SE, na.rm = TRUE)/20) &
-                     data[,paste(input$funnel_data_SE)] > (round(as.numeric(input$funnel_hover[2]), 2) -  max(funnel_data$SE, na.rm = TRUE)/20))
+      base::subset(data, data[,paste(input$funnel_data_est)] < (round(as.numeric(input$funnel_hover[1]), 4) +  max(funnel_data$Est, na.rm = TRUE)/80) &
+                     data[,paste(input$funnel_data_est)] > (round(as.numeric(input$funnel_hover[1]), 4) -  max(funnel_data$Est, na.rm = TRUE)/80) &
+                     data[,paste(input$funnel_data_SE)] < (round(as.numeric(input$funnel_hover[2]), 4) +  max(funnel_data$SE, na.rm = TRUE)/1) &
+                     data[,paste(input$funnel_data_SE)] > (round(as.numeric(input$funnel_hover[2]), 4) -  max(funnel_data$SE, na.rm = TRUE)/1))
     }else{}
 
   })

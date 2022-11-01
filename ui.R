@@ -32,14 +32,17 @@ ui <- shiny::navbarPage(
       ## panel for upload of IPD
       shiny::conditionalPanel(condition = "input.select_upload == 'IPD'",
                               h3("Individual Participant Data"),
-                              h5("Please provide at least one .csv file. The ",
+                              h5("Please provide at least one .csv/.sav/.rds file. The ",
                                  tags$a(href="https://github.com/JensFuenderich/MetaPipeX/blob/main/Supplementary_Material/Table_Templates/1_Individual_Participant_Data/codebook_for_individual_participant_data.csv", "codebook on github."),
                                  "describes the 5 columns that are needed for the analysis. The names do not have to be the same as in this codebook, but they should be consistent across the .csv files. If only data from a single multi-lab or a single replication project (or targer-effect) is uploaded, a placeholder for the name needs to be provided. It is possible to create such a placeholer by clicking the corresponding checkbox."),
-                              fileInput("IPD", "choose .csv file with individual participant data",
+                              fileInput("IPD", "choose .csv/.sav/.rds file with individual participant data",
                                         multiple = TRUE,
                                         accept = c("text/csv",
                                                    "text/comma-separated-values,text/plain",
-                                                   ".csv")),
+                                                   ".csv",
+                                                   ".sav",
+                                                   ".rds"
+                                                   )),
                               h5("The MetaPipeX needs to know which columns of the data should be used. Select them accordingly:"),
                               shiny::selectInput(inputId = "multilab_col",
                                                  label = "MultiLab:",
@@ -60,7 +63,6 @@ ui <- shiny::navbarPage(
                               shiny::selectInput(inputId = "group_col",
                                                  label = "Group:",
                                                  choices = ""),
-                              textInput("output_folder_set", "output_folder:"),
                               h5("Hit the button 'Provide MetaPipeX data format to the app.' in order for the MetaPipeX package to run its analyses.")
       ),
 
@@ -142,9 +144,6 @@ ui <- shiny::navbarPage(
         shinyWidgets::materialSwitch(inputId = "Stat_SE",
                                      label = "Exclude Standard Error of Replication Level Statistic?",
                                      status = "success"),
-        # shinyWidgets::materialSwitch(inputId = "Stat_ln",
-        #                              label = "Exclude the Logarithms of Standard Deviations?",
-        #                              status = "success"),
         shinyWidgets::prettyCheckboxGroup(inputId = "AnalysisResults",
                                           label = h3("Display Analysis results"),
                                           choices = Variables_List$AnalysisResults,
@@ -176,7 +175,8 @@ ui <- shiny::navbarPage(
       ),
       mainPanel(
         DT::DTOutput("selected_data"),
-        downloadButton("downloadData", "Download")
+        downloadButton("downloadData", "Download"),
+        uiOutput("out_zip_download")
       )
     )
   ),
@@ -206,9 +206,6 @@ ui <- shiny::navbarPage(
         shiny::actionButton(inputId = "exclusion",
                             label = "Exclude!"
         ),
-        # tags$head(
-        #   tags$style(HTML("input[name=Statistics][value='exclude'] { display: none }"))
-        # ),
         h3("Remove Exclusion"),
         shiny::selectInput(inputId = "Remove_MultiLab_Exclusion",
                            label = "MultiLab",
@@ -231,7 +228,6 @@ ui <- shiny::navbarPage(
         DT::DTOutput("excluded_data"),
         h3("Remaining Data"),
         DT::DTOutput("remaining_data")
-        #downloadButton("downloadData", "Download")
       )
     )
   ),
