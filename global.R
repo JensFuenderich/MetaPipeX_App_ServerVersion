@@ -28,7 +28,7 @@ library(MetaPipeX, include.only = 'full_pipeline') # include one function
 
 
 
-MA_data <- readr::read_csv(url("https://raw.githubusercontent.com/JensFuenderich/MetaPipeX/main/Supplementary_Material/Table_Templates/5_MetaPipeX/MetaPipeX_template.csv"))
+MetaPipeX_data_full <- readr::read_csv(url("https://raw.githubusercontent.com/JensFuenderich/MetaPipeX/main/Supplementary_Material/Table_Templates/5_MetaPipeX/MetaPipeX_template.csv"))
 codebook <- readr::read_csv(url("https://raw.githubusercontent.com/JensFuenderich/MetaPipeX/main/Supplementary_Material/Table_Templates/5_MetaPipeX/codebook_for_meta_pipe_x_data.csv"))
 
 codebook_text_vec <- "This tabular codebook serves to inform the abbreviations used in this shiny app.
@@ -40,8 +40,7 @@ just type it in the Search field and all lines containing that word will be disp
 
 # create a list for checkboxes, etc (in "Reactive Data Table" tab)
 Variables_List <- list(
-  AnalysisResults = list("Replication Results" = "Replication",
-                         "Model Estimates (Est)" = "Est",
+  AnalysisResults = list("Model Estimates (Est)" = "Est",
                          "Tau2" = "__Tau2_",
                          "SE of Tau2" = "SE_Tau2",
                          "Tau" = "Tau_",

@@ -2,7 +2,6 @@
 
 ui <- shiny::navbarPage(
 
-
   # make it pretty
   theme = shinythemes::shinytheme("flatly"),
 
@@ -20,7 +19,6 @@ ui <- shiny::navbarPage(
                                      "MetaPipeX (Meta-Analysis & Replication Summaries)" = "MetaPipeX"),
                          selected = "MetaPipeX"
       ),
-      # shiny::actionButton("confirm_upload", "Provide MetaPipeX data format to the app."),
       shiny::fluidRow(
         column(6,align="left",uiOutput("confirm_upload2"))
       ),
@@ -41,8 +39,7 @@ ui <- shiny::navbarPage(
                                                    "text/comma-separated-values,text/plain",
                                                    ".csv",
                                                    ".sav",
-                                                   ".rds"
-                                                   )),
+                                                   ".rds")),
                               h5("The MetaPipeX needs to know which columns of the data should be used. Select them accordingly:"),
                               shiny::selectInput(inputId = "multilab_col",
                                                  label = "MultiLab:",
@@ -95,7 +92,7 @@ ui <- shiny::navbarPage(
       ## panel for upload of data from MetaPipeX
       shiny::conditionalPanel(condition = "input.select_upload == 'MetaPipeX'",
                               h3("MetaPipeX Data"),
-                              h5("Please provide a single .csv that has been produced by MetaPipeX::merge_replication_summaries() or is arranged according to the", tags$a(href="https://github.com/JensFuenderich/MetaPipeX/blob/main/Supplementary_Material/Table_Templates/5_MetaPipeX/MetaPipeX_template.csv", "template on github.")),
+                              h5("Please provide a single .csv that has been produced by MetaPipeX::full_pipeline() or is arranged according to the", tags$a(href="https://github.com/JensFuenderich/MetaPipeX/blob/main/Supplementary_Material/Table_Templates/5_MetaPipeX/MetaPipeX_template.csv", "template on github.")),
                               fileInput("MetaPipeX", "choose .csv file with MetaPipeX data",
                                         multiple = FALSE,
                                         accept = c("text/csv",
@@ -114,7 +111,7 @@ ui <- shiny::navbarPage(
     shiny::sidebarLayout(
 
       shiny::sidebarPanel(
-        h3("Data Set Selection"),
+        h3("Data Subset"),
         shinyWidgets::materialSwitch(inputId = "Level",
                                      label = "Reduce to meta-analytical Data?",
                                      status = "success"),
@@ -128,10 +125,10 @@ ui <- shiny::navbarPage(
         ),
         shiny::selectInput(inputId = "Replication",
                            label = "Replication",
-                           choices = c("all", unique(MA_data$Replication))
+                           choices = c("all", unique(MetaPipeX_data_full$Replication))
         ),
         shinyWidgets::prettyCheckboxGroup(inputId = "Statistics",
-                                          label = h3("Choose statistics of interest"),
+                                          label = h3("Replication Statistics"),
                                           choices = Variables_List$Statistics,
                                           selected = "exclude",
                                           animation = "pulse",
@@ -145,7 +142,7 @@ ui <- shiny::navbarPage(
                                      label = "Exclude Standard Error of Replication Level Statistic?",
                                      status = "success"),
         shinyWidgets::prettyCheckboxGroup(inputId = "AnalysisResults",
-                                          label = h3("Display Analysis results"),
+                                          label = h3("Meta-analysis results (MD & SMD)"),
                                           choices = Variables_List$AnalysisResults,
                                           selected = "exclude",
                                           animation = "pulse",
@@ -175,7 +172,7 @@ ui <- shiny::navbarPage(
       ),
       mainPanel(
         DT::DTOutput("selected_data"),
-        downloadButton("downloadData", "Download"),
+        downloadButton("downloadData", "Download Table Data"),
         uiOutput("out_zip_download")
       )
     )
@@ -201,7 +198,7 @@ ui <- shiny::navbarPage(
         ),
         shiny::selectInput(inputId = "Replication_Exclusion",
                            label = "Replication",
-                           choices = c("all", unique(MA_data$Replication))
+                           choices = c("all", unique(MetaPipeX_data_full$Replication))
         ),
         shiny::actionButton(inputId = "exclusion",
                             label = "Exclude!"
@@ -217,7 +214,7 @@ ui <- shiny::navbarPage(
         ),
         shiny::selectInput(inputId = "Remove_Replication_Exclusion",
                            label = "Replication",
-                           choices = c("all", unique(MA_data$Replication))
+                           choices = c("all", unique(MetaPipeX_data_full$Replication))
         ),
         shiny::actionButton(inputId = "remove_exclusion",
                             label = "Remove Exclusion!"
@@ -233,6 +230,30 @@ ui <- shiny::navbarPage(
   ),
 
 
+  ## tab for Kernel Density Estimations
+
+  shiny::tabPanel("Kernel Density Estimations",
+                  shiny::sidebarLayout(
+                    shiny::sidebarPanel(
+                      shiny::actionButton(inputId = "upload_kernel_density_est",
+                                          label = "Upload Data"),
+                      shiny::varSelectInput(inputId = "kernel_density_est_data_est",
+                                            label = "choose a replication statistic of interest",
+                                            data = data()),
+                      shiny::varSelectInput(inputId = "kernel_density_est_data_model_est",
+                                            label = "choose the model estimate",
+                                            data = data()),
+                      shiny::varSelectInput(inputId = "kernel_density_est_data_Tau",
+                                            label = "choose the according tau",
+                                            data = data())
+                    ),
+                    mainPanel(
+                      h4("Kernel Density Estimations for selected statistics"),
+                      uiOutput("kernel_density_estmary_out"),
+                      shiny::downloadLink("download_kernel_density_est", "Download Kernel Density Estimations")
+                    )
+                  )
+  ),
 
   ## tab for Histograms
 
@@ -356,7 +377,7 @@ ui <- shiny::navbarPage(
                       shiny::actionButton(inputId = "upload_forest",
                                           label = "Upload Data"),
                       shiny::varSelectInput(inputId = "forest_data_statistics",
-                                            label = "choose a statistic of interest",
+                                            label = "choose a replication statistic of interest",
                                             data = data()),
                       shiny::varSelectInput(inputId = "forest_data_SE",
                                             label = "choose the according standard error",
@@ -381,7 +402,7 @@ ui <- shiny::navbarPage(
                       shiny::actionButton(inputId = "upload_funnel",
                                           label = "Upload Data"),
                       shiny::varSelectInput(inputId = "funnel_data_est",
-                                            label = "choose a statistic of interest",
+                                            label = "choose a replication statistic of interest",
                                             data = data()),
                       shiny::varSelectInput(inputId = "funnel_data_SE",
                                             label = "choose the according standard error",
@@ -409,7 +430,7 @@ ui <- shiny::navbarPage(
                       shiny::actionButton(inputId = "upload_metaplot",
                                           label = "Upload Data"),
                       shiny::varSelectInput(inputId = "metaplot_data_est",
-                                            label = "choose a statistic of interest",
+                                            label = "choose a replication statistic of interest",
                                             data = data()),
                       shiny::varSelectInput(inputId = "metaplot_data_SE",
                                             label = "choose the according standard error",
@@ -442,8 +463,10 @@ ui <- shiny::navbarPage(
                     ),
                     mainPanel(
                       h4("Tabular Codebook"),
-                      DT::DTOutput("codebook")
+                      DT::DTOutput("codebook"),
+                      downloadButton("downloadCodebook", "Download Codebook"),
                     )
                   )
   )
+
 )
