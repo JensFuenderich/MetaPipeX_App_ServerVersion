@@ -60,6 +60,15 @@ ui <- shiny::navbarPage(
                               shiny::selectInput(inputId = "group_col",
                                                  label = "Group:",
                                                  choices = ""),
+                              shiny::checkboxInput(inputId = "exclusions_question",
+                                                   label = "Do you need to exclude data?"),
+                              shiny::selectInput(inputId = "exclusions_col",
+                                                 label = "Exclusions:",
+                                                 choices = ""),
+                              uiOutput("out_keep_exclude"),
+                              tags$style("#expr-container label {font-weight: 400;}"),
+                              tags$div(id = "expr-container",
+                                       uiOutput("out_keep_exclude_identifier")),
                               h5("Hit the button 'Provide MetaPipeX data format to the app.' in order for the MetaPipeX package to run its analyses.")
       ),
 
@@ -137,7 +146,6 @@ ui <- shiny::navbarPage(
         tags$head(
           tags$style(HTML("input[name=Statistics][value='exclude'] { display: none }"))
         ),
-        # h3("Exclude Further Information"),
         shinyWidgets::materialSwitch(inputId = "Stat_SE",
                                      label = "Exclude Standard Error of Replication Level Statistic?",
                                      status = "success"),
@@ -458,8 +466,7 @@ ui <- shiny::navbarPage(
                   shiny::sidebarLayout(
                     shiny::sidebarPanel(
                       h3("How to use this codebook:"),
-                      shiny::p(codebook_text_vec)#,
-                      #verbatimTextOutput("codebook_text",  placeholder = FALSE)
+                      shiny::p(codebook_text_vec)
                     ),
                     mainPanel(
                       h4("Tabular Codebook"),

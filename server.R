@@ -5,7 +5,6 @@ server <- function(input, output, session){
 
 
   options(shiny.maxRequestSize = 500*1024^2)
-
   #### Content:
   ### Upload Data
   ### Data Selection
@@ -25,9 +24,9 @@ server <- function(input, output, session){
   ## Create Object for analysis results from data imports
 
   # create empty reactive values object
-  data_import <- reactiveValues()
+  data_import <- shiny::reactiveValues()
   # after applying MetaPipeX functions (depending on the data type imported),
-  # the df that is then provided to "Data Selection" is stored as MetaPipeX_data_full()
+  # the df that is then provided to "Data Selection" is stored as MetaPipeX_data$full
 
 
   ## This chunk creates the "confirm upload" button, only when data is supplied to the app
@@ -99,10 +98,34 @@ server <- function(input, output, session){
                              choices = IPD_raw_data_import_columns(),
                              selected = if ( any(IPD_raw_data_import_columns() == "Group") ) {"Group"}else{})
   })
+  shiny::observe({
+    shiny::updateSelectInput(session, "exclusions_col",
+                             choices = IPD_raw_data_import_columns(),
+                             selected = if ( any(IPD_raw_data_import_columns() == "Exclusions") ) {"Exclusions"}else{NULL})
+  })
+
+  output$out_keep_exclude <- renderUI({
+    if (input$exclusions_question == TRUE) {
+      shiny::radioButtons(inputId = "keep_exclude",
+                          label = NULL,
+                          choices = c(
+                            "Keep..." = "keep",
+                            "Exclude.." = "exclude"
+                          ))
+    }else{}
+  })
+
+  output$out_keep_exclude_identifier <- renderUI({
+    if (input$exclusions_question == TRUE) {
+      shiny::textInput(inputId = "keep_exclude_identifier",
+                       label = HTML("...all rows with data$Exclusions ==") )
+    }else{}
+  })
+
 
   ## run the pipeline, as soon as the column selection is confirmed
 
-  shiny::observeEvent(input$confirm_upload,{ # stores results in IPD_reactive_Values
+  shiny::observeEvent(input$confirm_upload,{ # stores results in data_import$IPD_data and data_import$IPD_MetaPipeX
 
     if (input$select_upload == "IPD") {
 
@@ -140,14 +163,24 @@ server <- function(input, output, session){
                               }
                             }
 
+                            # apply exclusion if necessary
+                            if (input$exclusions_question == TRUE) {
+                              apply_exclusion <- function(x){
+                                single_df <- base::subset(IPD_list[[x]],
+                                                          IPD_list[[x]][input$exclusions_col] == input$keep_exclude_identifier)
+                                IPD_list[[x]] <- single_df
+                              }
+                              IPD_list <- lapply(1:length(IPD_list), apply_exclusion)
+                            } else {}
 
                             # reduce to the relevant columns
                             reduce_cols <- function(x){
-                              single_df <- base::subset(IPD_list[[x]], select =  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col},
-                                                                                   if(input$create_custom_replicationproject_col == TRUE){"ReplicationProject"}else{input$replicationproject_col},
-                                                                                   input$replication_col,
-                                                                                   input$DV_col,
-                                                                                   input$group_col))
+                              single_df <- base::subset(IPD_list[[x]],
+                                                        select =  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col},
+                                                                    if(input$create_custom_replicationproject_col == TRUE){"ReplicationProject"}else{input$replicationproject_col},
+                                                                    input$replication_col,
+                                                                    input$DV_col,
+                                                                    input$group_col))
                               IPD_list[[x]] <- single_df
                             }
 
@@ -163,7 +196,7 @@ server <- function(input, output, session){
                                 IPD_list[[x]][[if(input$create_custom_multilab_col == TRUE){"ReplicationProject"}else{input$replicationproject_col}]],
                                 as.character(IPD_list[[x]][[input$replication_col]]),
                                 IPD_list[[x]][[input$DV_col]],
-                                abs(as.numeric(unlist(IPD_list[[x]][[input$group_col]]))-1)
+                                abs(as.numeric(as.factor(unlist(IPD_list[[x]][[input$group_col]])))-1)
                               )
                               names(single_df) <-  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col}, if(input$create_custom_multilab_col == TRUE){"ReplicationProject"}else{input$replicationproject_col}, input$replication_col, input$DV_col, input$group_col)
                               IPD_list[[x]] <- single_df
@@ -230,13 +263,8 @@ server <- function(input, output, session){
                             # expand df
                             expanded_MA <- meta_analyses[duplications,]
 
-                            saveRDS(merged_replication_summaries, "merged_replication_summaries.rds")
-                            saveRDS(expanded_MA, "expanded_MA.rds")
-
                             # reorder both data frames (so they match) and combine them to create the MetaPipeX App data format
                             ReplicationSum_MetaPipeX <- cbind(merged_replication_summaries, expanded_MA)
-
-                            saveRDS(ReplicationSum_MetaPipeX, "ReplicationSum_MetaPipeX1.rds")
 
                             # add "Replication__Result__" to all Replication related columns and "MA__" to all meta-analysis columns
                             # Replication
@@ -257,7 +285,6 @@ server <- function(input, output, session){
 
                           })
 
-      #saveRDS(MetaPipeX_Data, "MetaPipeX_Data2.rds")
       data_import$ReplicationSum_MetaPipeX <- ReplicationSum_MetaPipeX
 
     } else {}
@@ -358,7 +385,8 @@ server <- function(input, output, session){
 
   ## final output from Upload Data
 
-  MetaPipeX_data_full <- shiny::eventReactive( input$confirm_upload, {
+
+  MetaPipeX_data_upload <- shiny::eventReactive( input$confirm_upload, {
     if (input$select_upload == "MetaPipeX") {
       data_import$MetaPipeX_MetaPipeX
     } else if (input$select_upload == "MergedReplicationSum") {
@@ -372,21 +400,26 @@ server <- function(input, output, session){
     }
   })
 
+  MetaPipeX_data <- shiny::reactiveValues()
+
+  shiny::observeEvent(input$confirm_upload,{
+    MetaPipeX_data$full <- base::rbind(MetaPipeX_data$full, MetaPipeX_data_upload())
+  })
 
   ### Data Selection
 
   ## selectInput dependencies
 
   multilab_choices <- shiny::reactive({
-    MetaPipeX_data_full <- MetaPipeX_data_full()
+    MetaPipeX_data_full <- MetaPipeX_data$full
     c("all", unique(MetaPipeX_data_full$MultiLab))
   })
   replicationproject_choices <- shiny::reactive({
-    MetaPipeX_data_full <- MetaPipeX_data_full()
+    MetaPipeX_data_full <- MetaPipeX_data$full
     unique(MetaPipeX_data_full$ReplicationProject)
   })
   replication_choices <- shiny::reactive({
-    MetaPipeX_data_full <- MetaPipeX_data_full()
+    MetaPipeX_data_full <- MetaPipeX_data$full
     c("all", unique(MetaPipeX_data_full$Replication))
   })
 
@@ -399,7 +432,7 @@ server <- function(input, output, session){
                              choices = if (input$MultiLab == "all") { # return all ReplicationProjects
                                c("all", replicationproject_choices())
                              } else { # only return ReplicationProjects from the selected multilab
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all", unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$MultiLab,]$ReplicationProject))
                              }
     )
@@ -407,10 +440,10 @@ server <- function(input, output, session){
   shiny::observe({
     shiny::updateSelectInput(session, "Replication",
                              choices = if (input$MultiLab == "all") {
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all",unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$MultiLab,]$Replication))
                              } else {
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all", unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$MultiLab,]$Replication))
                              }
     )
@@ -425,7 +458,7 @@ server <- function(input, output, session){
     if (is.na(input$exclusion) == TRUE) {}
 
     # create df from reactive object
-    MetaPipeX_data_full <- MetaPipeX_data_full()
+    MetaPipeX_data_full <- MetaPipeX_data$full
 
     # decide if Replication level data is included
     if (input$Level == TRUE) {
@@ -640,7 +673,7 @@ server <- function(input, output, session){
                              choices = if (input$MultiLab_Exclusion == "all") { # return all ReplicationProjects
                                c("all", replicationproject_choices())
                              } else { # only return ReplicationProjects from the selected multilab
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all", unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$MultiLab_Exclusion,]$ReplicationProject))
                              }
     )
@@ -648,10 +681,10 @@ server <- function(input, output, session){
   shiny::observe({
     shiny::updateSelectInput(session, "Replication_Exclusion",
                              choices = if (input$MultiLab_Exclusion == "all") {
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all",unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$MultiLab_Exclusion,]$Replication))
                              } else {
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all", unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$MultiLab_Exclusion,]$Replication))
                              }
     )
@@ -732,7 +765,7 @@ server <- function(input, output, session){
                              choices = if (input$Remove_MultiLab_Exclusion == "all") { # return all replications
                                c("all", replicationproject_choices())
                              } else { # only return replications from the selected multilab
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all", unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$Remove_MultiLab_Exclusion,]$ReplicationProject))
                              }
     )
@@ -740,10 +773,10 @@ server <- function(input, output, session){
   shiny::observe({
     shiny::updateSelectInput(session, "Remove_Replication_Exclusion",
                              choices = if (input$Remove_MultiLab_Exclusion == "all") {
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all",unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$Remove_MultiLab_Exclusion,]$Replication))
                              } else {
-                               MetaPipeX_data_full <- MetaPipeX_data_full()
+                               MetaPipeX_data_full <- MetaPipeX_data$full
                                c("all", unique(MetaPipeX_data_full[MetaPipeX_data_full$MultiLab == input$Remove_MultiLab_Exclusion,]$Replication))
                              }
     )
