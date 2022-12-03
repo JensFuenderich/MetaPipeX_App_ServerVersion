@@ -1,24 +1,23 @@
 ### load packages
-library(shiny)
-library(readr)
 library(ggplot2)
-library(shinyWidgets)
-library(shinythemes)
+library(grDevices)
 library(magrittr)
 library(metafor)
-library(puniform)
-library(grDevices)
-library(janitor, include.only = 'compare_df_cols') # include one function
+library(readr)
+library(shiny)
+library(shinythemes)
+library(shinyWidgets)
 library(DT, include.only = 'renderDT') # include one function
 library(DT, include.only = 'DTOutput') # include one function
-library(stats, include.only = 'na.omit') # include one function
-library(stats, include.only = 'cor') # include one function
-library(foreign, include.only = 'read.spss') # include one function
+library(haven, include.only = 'read_sav') # include one function
+library(janitor, include.only = 'compare_df_cols') # include one function
 library(MetaPipeX, include.only = 'create_replication_summaries') # include one function
 library(MetaPipeX, include.only = 'merge_replication_summaries') # include one function
 library(MetaPipeX, include.only = 'meta_analyses') # include one function
 library(MetaPipeX, include.only = 'full_pipeline') # include one function
-
+library(puniform, include.only = 'meta_plot') # include one function
+library(stats, include.only = 'na.omit') # include one function
+library(stats, include.only = 'cor') # include one function
 
 ### general imports
 

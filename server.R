@@ -5,6 +5,7 @@ server <- function(input, output, session){
 
 
   options(shiny.maxRequestSize = 500*1024^2)
+
   #### Content:
   ### Upload Data
   ### Data Selection
@@ -54,7 +55,7 @@ server <- function(input, output, session){
         base::lapply(upload_info$datapath,readr::read_csv)
       }
       else if (base::length(base::grep(".sav", upload_info$datapath)) > 0) {
-        base::lapply(upload_info$datapath, function(x){foreign::read.spss(x, to.data.frame=TRUE)})
+        base::lapply(upload_info$datapath, function(x){haven::read_sav(x)})
       }
       else if (base::length(base::grep(".rds", upload_info$datapath))  > 0){
         base::lapply(upload_info$datapath,base::readRDS)
@@ -99,26 +100,31 @@ server <- function(input, output, session){
                              selected = if ( any(IPD_raw_data_import_columns() == "Group") ) {"Group"}else{})
   })
   shiny::observe({
-    shiny::updateSelectInput(session, "exclusions_col",
+    shiny::updateSelectInput(session, "filter_col",
                              choices = IPD_raw_data_import_columns(),
                              selected = if ( any(IPD_raw_data_import_columns() == "Exclusions") ) {"Exclusions"}else{NULL})
   })
 
-  output$out_keep_exclude <- renderUI({
-    if (input$exclusions_question == TRUE) {
-      shiny::radioButtons(inputId = "keep_exclude",
-                          label = NULL,
-                          choices = c(
-                            "Keep..." = "keep",
-                            "Exclude.." = "exclude"
-                          ))
+
+
+  output$out_custom_multilab_col <- renderUI({
+    if (input$create_custom_multilab_col == TRUE) {
+      shiny::textInput(inputId = "custom_multilab_col",
+                       label = "Type in a name for the multi-lab:" )
     }else{}
   })
 
-  output$out_keep_exclude_identifier <- renderUI({
-    if (input$exclusions_question == TRUE) {
-      shiny::textInput(inputId = "keep_exclude_identifier",
-                       label = HTML("...all rows with data$Exclusions ==") )
+  output$out_custom_replicationproject_col <- renderUI({
+    if (input$create_custom_replicationproject_col == TRUE) {
+      shiny::textInput(inputId = "custom_replicationproject_col",
+                       label = "Type in a name for the replication project:" )
+    }else{}
+  })
+
+  output$out_filter_identifier <- renderUI({
+    if (input$filter_question == TRUE) {
+      shiny::textInput(inputId = "filter_identifier",
+                       label = HTML("Define filter (use x to refer to the filter column):") )
     }else{}
   })
 
@@ -137,13 +143,12 @@ server <- function(input, output, session){
                           {
 
                             if (input$create_custom_multilab_col == TRUE) {
-                              IPD_list <- lapply(IPD_list, cbind, MultiLab = "MultiLab")
+                              IPD_list <- lapply(IPD_list, cbind, MultiLab = input$custom_multilab_col)
                             }else{}
 
                             if (input$create_custom_replicationproject_col == TRUE) {
-                              IPD_list <- lapply(IPD_list, cbind, ReplicationProject = "ReplicationProject")
+                              IPD_list <- lapply(IPD_list, cbind, ReplicationProject = input$custom_replicationproject_col)
                             }else{}
-
 
                             # If a single data frame is provided to the function it is transformed to a list object. Each list element represents a replication projects/target-effect.
                             if (length(IPD_list) > 1) {}else{
@@ -164,11 +169,12 @@ server <- function(input, output, session){
                             }
 
                             # apply exclusion if necessary
-                            if (input$exclusions_question == TRUE) {
+                            if (input$filter_question == TRUE) {
                               apply_exclusion <- function(x){
-                                single_df <- base::subset(IPD_list[[x]],
-                                                          IPD_list[[x]][input$exclusions_col] == input$keep_exclude_identifier)
-                                IPD_list[[x]] <- single_df
+
+                                IPD_list[[x]] <- IPD_list[[x]] %>% dplyr::filter(eval(parse(text = gsub(pattern = "x",
+                                                                                                        replacement = "IPD_list[[x]][input$filter_col]",
+                                                                                                        input$filter_identifier))))
                               }
                               IPD_list <- lapply(1:length(IPD_list), apply_exclusion)
                             } else {}
@@ -196,6 +202,7 @@ server <- function(input, output, session){
                                 IPD_list[[x]][[if(input$create_custom_multilab_col == TRUE){"ReplicationProject"}else{input$replicationproject_col}]],
                                 as.character(IPD_list[[x]][[input$replication_col]]),
                                 IPD_list[[x]][[input$DV_col]],
+                                #abs(as.numeric(unlist(IPD_list[[x]][[input$group_col]]))-1)
                                 abs(as.numeric(as.factor(unlist(IPD_list[[x]][[input$group_col]])))-1)
                               )
                               names(single_df) <-  c(if(input$create_custom_multilab_col == TRUE){"MultiLab"}else{input$multilab_col}, if(input$create_custom_multilab_col == TRUE){"ReplicationProject"}else{input$replicationproject_col}, input$replication_col, input$DV_col, input$group_col)
@@ -225,8 +232,6 @@ server <- function(input, output, session){
   ## run the pipeline, as soon as the input is confirmed
 
   shiny::observeEvent(input$confirm_upload,{ # stores results in data_import$ReplicationSum_MetaPipeX
-
-    #ReplicationSum_data_import <- shiny::eventReactive( input$confirm_upload, {
 
     if (input$select_upload == "ReplicationSum") {
 
@@ -1333,9 +1338,6 @@ server <- function(input, output, session){
   output$scatter_plot <- shiny::renderPlot({
 
     plot_data <- as.data.frame(scatter_plot_data())
-
-    # plot_data <- plot_data[ vals_scatter$keeprows, , drop = FALSE]
-    # exclude <- plot_data[!vals_scatter$keeprows, , drop = FALSE]
 
     # Plotting
 
