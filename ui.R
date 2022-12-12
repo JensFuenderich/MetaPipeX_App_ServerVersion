@@ -210,9 +210,11 @@ ui <- shiny::navbarPage(
                            label = "Replication",
                            choices = c("all", unique(MetaPipeX_data_full$Replication))
         ),
+
         shiny::actionButton(inputId = "exclusion",
-                            label = "Exclude!"
+                            label = "Exclude!*"
         ),
+        h5("*If it does not respond after the first click, click again!"),
         h3("Remove Exclusion"),
         shiny::selectInput(inputId = "Remove_MultiLab_Exclusion",
                            label = "MultiLab",

@@ -6,6 +6,7 @@ server <- function(input, output, session){
 
   options(shiny.maxRequestSize = 500*1024^2)
 
+
   #### Content:
   ### Upload Data
   ### Data Selection
@@ -168,16 +169,17 @@ server <- function(input, output, session){
                               }
                             }
 
-                            # apply exclusion if necessary
+                            # apply filter if necessary
                             if (input$filter_question == TRUE) {
-                              apply_exclusion <- function(x){
+                              apply_filter <- function(x){
 
                                 IPD_list[[x]] <- IPD_list[[x]] %>% dplyr::filter(eval(parse(text = gsub(pattern = "x",
                                                                                                         replacement = "IPD_list[[x]][input$filter_col]",
                                                                                                         input$filter_identifier))))
                               }
-                              IPD_list <- lapply(1:length(IPD_list), apply_exclusion)
+                              IPD_list <- lapply(1:length(IPD_list), apply_filter)
                             } else {}
+
 
                             # reduce to the relevant columns
                             reduce_cols <- function(x){
@@ -187,6 +189,7 @@ server <- function(input, output, session){
                                                                     input$replication_col,
                                                                     input$DV_col,
                                                                     input$group_col))
+
                               IPD_list[[x]] <- single_df
                             }
 
@@ -194,6 +197,10 @@ server <- function(input, output, session){
 
                             # remove NA
                             IPD_list <- lapply(1:length(IPD_list), function(x){IPD_list[[x]] <- stats::na.omit(IPD_list[[x]])})
+
+                            # create indicators for data_import$transformations
+                            original_group_indicators <- paste(unique(as.factor(unlist(IPD_list[[1]][[input$group_col]]))), collapse = ",")
+                            MetaPipeX_group_indicators = paste(unique(abs(as.numeric(as.factor(unlist(IPD_list[[1]][[input$group_col]])))-1)), collapse = ",")
 
                             # modify variables that could be in in an annoying format (added after trying to import a .sav file)
                             IPD_list <- lapply(1:length(IPD_list), function(x){
@@ -220,6 +227,25 @@ server <- function(input, output, session){
 
                           })
 
+      data_import$input <- IPD_list()
+      data_import$transformations <- data.frame(MultiLab = if (input$create_custom_multilab_col == TRUE) {input$custom_multilab_col} else {input$multilab_col},
+                                                ReplicationProject = if (input$create_custom_replicationproject_col == TRUE) {input$custom_replicationproject_col} else {input$replicationproject_col},
+                                                Replication = input$replication_col,
+                                                DV = input$DV_col,
+                                                Group = input$group_col,
+                                                Original_Group_Indicators = original_group_indicators,
+                                                MetaPipeX_Group_Indicators = MetaPipeX_group_indicators,
+                                                Filter_Col_x = if (input$filter_question == TRUE) {
+                                                  input$filter_col
+                                                }else{"no filter"},
+                                                Filter = if (input$filter_question == TRUE) {
+                                                  input$filter_identifier
+                                                }else{"no filter"}
+      )
+      data_import$codebook_transformations <- rbind(IPD_analzed$`1_Individual_Participant_Data`$codebook_for_individual_participant_data,
+                                                    data.frame(Column_Name = c("Filter_Col_x", "Filter"),
+                                                               Description = c("The column containing the information that the filter is applied to (x).",
+                                                                               "The filter as it was applied to x. For example: 'x > 170'.")))
       data_import$IPD_data <- IPD_analzed
       data_import$IPD_MetaPipeX <- IPD_analzed$`5_Meta_Pipe_X`$MetaPipeX_Data
 
@@ -630,6 +656,14 @@ server <- function(input, output, session){
     content = function(file){
       # create directory
       dir.create("MetaPipeX_folder")
+      # create folder for data input
+      dir.create("MetaPipeX_folder/0_Input")
+      # save data as imported
+      base::saveRDS(data_import$input, file = "MetaPipeX_folder/0_Input/Input_Data.rds")
+      # save data transformations
+      write.csv(data_import$transformations, file = "MetaPipeX_folder/0_Input/transform_to_IPD.csv")
+      # save codebook for transformations
+      write.csv(data_import$codebook_transformations, file = "MetaPipeX_folder/0_Input/codebook_for_transform_to_IPD.csv")
       # create folder for individual participant data
       dir.create(paste("MetaPipeX_folder", "/1_Individual_Participant_Data", sep = ""))
       readr::write_csv(data_import$IPD_data$`1_Individual_Participant_Data`$codebook_for_individual_participant_data, paste("MetaPipeX_folder/1_Individual_Participant_Data/codebook_for_individual_participant_data.csv", sep = ""))
