@@ -2,6 +2,7 @@
 
 ui <- shiny::navbarPage(
 
+
   # make it pretty
   theme = shinythemes::shinytheme("flatly"),
 
@@ -261,7 +262,7 @@ ui <- shiny::navbarPage(
                     ),
                     mainPanel(
                       h4("Kernel Density Estimations for selected statistics"),
-                      uiOutput("kernel_density_estmary_out"),
+                      uiOutput("kernel_density_est_out"),
                       shiny::downloadLink("download_kernel_density_est", "Download Kernel Density Estimations")
                     )
                   )
@@ -400,7 +401,8 @@ ui <- shiny::navbarPage(
                     ),
                     mainPanel(
                       h4("Forest Plot for selected statistics"),
-                      shiny::plotOutput(outputId = "forest_plot"),
+                      uiOutput("forest_plot_out"),
+                      #shiny::plotOutput(outputId = "forest_plot"),
                       shiny::downloadLink("download_forest", "Download Forest Plot")
                     )
                   )
@@ -479,5 +481,4 @@ ui <- shiny::navbarPage(
                     )
                   )
   )
-
 )
