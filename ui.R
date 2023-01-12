@@ -479,6 +479,7 @@ ui <- shiny::navbarPage(
                       DT::DTOutput("codebook"),
                       downloadButton("downloadCodebook", "Download Codebook"),
                     )
-                  )
+                  ),
+                  shiny::tags$footer("Version: 2022.01.12")
   )
 )
