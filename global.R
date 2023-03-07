@@ -1,12 +1,33 @@
+### install packages
+
+# install.packages(c("devtools",
+#                    "DT",
+#                    "ggplot2",
+#                    "grDevices",
+#                    "haven",
+#                    "janitor",
+#                    "magrittr",
+#                    "puniform",
+#                    "readr",
+#                    "shiny",
+#                    "shinythemes",
+#                    "shinyWidgets",
+#                    "stats")
+# )
+#
+# devtools::install_github("JensFuenderich/MetaPipeX/R-Package",
+#                          force = TRUE)
+
 ### load packages
-library(ggplot2)
-library(grDevices)
-library(magrittr)
-library(metafor)
-library(readr)
-library(shiny)
-library(shinythemes)
-library(shinyWidgets)
+lapply(c(ggplot2,
+         grDevices,
+         magrittr,
+         metafor,
+         readr,
+         shiny,
+         shinythemes,
+         shinyWidgets,
+         ), library, character.only = TRUE)
 library(DT, include.only = 'renderDT') # include one function
 library(DT, include.only = 'DTOutput') # include one function
 library(haven, include.only = 'read_sav') # include one function
@@ -20,12 +41,6 @@ library(stats, include.only = 'na.omit') # include one function
 library(stats, include.only = 'cor') # include one function
 
 ### general imports
-
-# devtools::install_github("RobbievanAert/puniform")
-
-# pacman::p_load_gh("RobbievanAert/puniform")
-
-
 
 MetaPipeX_data_full <- readr::read_csv(url("https://raw.githubusercontent.com/JensFuenderich/MetaPipeX/main/Supplementary_Material/Table_Templates/5_MetaPipeX/MetaPipeX_template.csv"))
 codebook <- readr::read_csv(url("https://raw.githubusercontent.com/JensFuenderich/MetaPipeX/main/Supplementary_Material/Table_Templates/5_MetaPipeX/codebook_for_meta_pipe_x_data.csv"))

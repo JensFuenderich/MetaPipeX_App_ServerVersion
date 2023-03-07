@@ -136,7 +136,9 @@ ui <- shiny::navbarPage(
         ),
         shiny::selectInput(inputId = "Replication",
                            label = "Replication",
-                           choices = c("all", unique(MetaPipeX_data_full$Replication))
+                           choices = c("all",
+                                       unique(MetaPipeX_data_full$Replication)
+                                       )
         ),
         shinyWidgets::prettyCheckboxGroup(inputId = "Statistics",
                                           label = h3("Replication Statistics"),
@@ -209,7 +211,9 @@ ui <- shiny::navbarPage(
         ),
         shiny::selectInput(inputId = "Replication_Exclusion",
                            label = "Replication",
-                           choices = c("all", unique(MetaPipeX_data_full$Replication))
+                           choices = c("all",
+                                       unique(MetaPipeX_data_full$Replication)
+                                       )
         ),
 
         shiny::actionButton(inputId = "exclusion",
@@ -227,7 +231,9 @@ ui <- shiny::navbarPage(
         ),
         shiny::selectInput(inputId = "Remove_Replication_Exclusion",
                            label = "Replication",
-                           choices = c("all", unique(MetaPipeX_data_full$Replication))
+                           choices = c("all",
+                                       unique(MetaPipeX_data_full$Replication)
+                                       )
         ),
         shiny::actionButton(inputId = "remove_exclusion",
                             label = "Remove Exclusion!"
@@ -480,6 +486,6 @@ ui <- shiny::navbarPage(
                       downloadButton("downloadCodebook", "Download Codebook"),
                     )
                   ),
-                  shiny::tags$footer("Version: 2022.01.12")
+                  shiny::tags$footer("Version: March 7th 2023")
   )
 )
