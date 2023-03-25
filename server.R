@@ -23,6 +23,39 @@ server <- function(input, output, session){
 
   ### Upload Data
 
+  ## Create shiny modal dialog window for terms of use
+
+  terms_of_service_modal <- shiny::modalDialog(
+    title = "Terms of Service",
+    shiny::p("This service is intended for academic researchers and students and may not be used for commercial purposes. No personally identifiable data may be uploaded. The user ensures that the upload of the data does not infringe the rights of third parties."),
+    shiny::p("LMU does not guarantee the accuracy of the analyses and visualizations. Likewise, LMU does not guarantee that the provided server applications meet the specific requirements of the user or that the system runs without errors or interruption. LMU cannot guarantee the integrity (in terms of destruction, manipulation) and confidentiality of the data processed by it. LMU may change the server applications at any time or discontinue the service."),
+    shiny::p("LMU is not liable for any damages of any kind arising from the use of the server applications; except for intentional misconduct and gross negligence of LMU employees or the persons they use to fulfill their duties."),
+    shiny::checkboxGroupInput("check_terms", "",
+                              choiceNames =
+                                list("I have read and accept the terms of service",
+                                     "I will only upload fully anonymized data sets, not personally identifiable data.",
+                                     "I will not upload any data that infringes on the rights of third parties."),
+                              choiceValues =
+                                list("calendar", "bed", "cog")),
+    easyClose = F,
+    footer = tagList(
+      shiny::p("Once you agree to the terms of service you may explore the MetaPipeX app!")
+    )
+  )
+
+  # Show the model on start up
+  shiny::showModal(terms_of_service_modal)
+
+  shiny::observeEvent(input$check_terms, {
+
+    if ("calendar" %in% input$check_terms &
+        "bed" %in% input$check_terms &
+        "cog" %in% input$check_terms){
+      shiny::removeModal()
+    }
+
+  })
+
   ## Create Object for analysis results from data imports
 
   # create empty reactive values object

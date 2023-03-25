@@ -486,6 +486,6 @@ ui <- shiny::navbarPage(
                       downloadButton("downloadCodebook", "Download Codebook"),
                     )
                   ),
-                  shiny::tags$footer("Version: March 7th 2023")
+                  shiny::tags$footer("Version: March 24th 2023")
   )
 )
