@@ -39,14 +39,15 @@ server <- function(input, output, session){
                                 list("calendar", "bed", "cog")),
     easyClose = F,
     footer = tagList(
-      shiny::p("Once you agree to the terms of service you may explore the MetaPipeX app!")
+      shiny::p("Make sure to agree to the terms of service and you may explore the MetaPipeX app."),
+      shiny::actionButton("start_app", "Start exploring the app!")
     )
   )
 
   # Show the model on start up
   shiny::showModal(terms_of_service_modal)
 
-  shiny::observeEvent(input$check_terms, {
+  shiny::observeEvent(input$start_app, {
 
     if ("calendar" %in% input$check_terms &
         "bed" %in% input$check_terms &
